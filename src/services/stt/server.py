@@ -29,6 +29,8 @@ DIARIZATION_MODEL = os.environ.get("DIARIZATION_MODEL", "MEscriva/gilbert-pyanno
 DEVICE = os.environ.get("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
 COMPUTE_TYPE = os.environ.get("COMPUTE_TYPE", "float16" if DEVICE == "cuda" else "float32")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
+# Use transformers for PyTorch models, faster-whisper for CTranslate2 models
+USE_TRANSFORMERS = os.environ.get("USE_TRANSFORMERS", "true").lower() == "true"
 
 
 # -----------------------------------------------------------------------------
@@ -120,14 +122,27 @@ def load_whisper():
     """Load Whisper model."""
     global whisper_model
     if whisper_model is None:
-        from faster_whisper import WhisperModel
-        print(f"Loading Whisper model: {WHISPER_MODEL} on {DEVICE}")
-        whisper_model = WhisperModel(
-            WHISPER_MODEL,
-            device=DEVICE,
-            compute_type=COMPUTE_TYPE,
-        )
-        print("Whisper model loaded successfully")
+        if USE_TRANSFORMERS:
+            # Use transformers for PyTorch models (like Gilbert-AI/gilbert-fr-source)
+            import transformers
+            print(f"Loading Whisper model (transformers): {WHISPER_MODEL} on {DEVICE}")
+            whisper_model = transformers.pipeline(
+                "automatic-speech-recognition",
+                model=WHISPER_MODEL,
+                torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
+                device=DEVICE,
+            )
+            print("Whisper model loaded successfully (transformers)")
+        else:
+            # Use faster-whisper for CTranslate2 models
+            from faster_whisper import WhisperModel
+            print(f"Loading Whisper model (faster-whisper): {WHISPER_MODEL} on {DEVICE}")
+            whisper_model = WhisperModel(
+                WHISPER_MODEL,
+                device=DEVICE,
+                compute_type=COMPUTE_TYPE,
+            )
+            print("Whisper model loaded successfully (faster-whisper)")
     return whisper_model
 
 
@@ -214,6 +229,8 @@ async def transcribe(
 
     Returns transcription with segments and optional word timestamps.
     """
+    import librosa
+
     # Save uploaded file to temp
     suffix = Path(audio.filename or "audio.wav").suffix
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
@@ -224,59 +241,133 @@ async def transcribe(
     try:
         model = load_whisper()
 
-        # Run transcription
-        segments_gen, info = model.transcribe(
-            str(temp_path),
-            language=language,
-            word_timestamps=word_timestamps,
-            vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 500},
-        )
+        # Get audio duration
+        audio_duration = librosa.get_duration(path=str(temp_path))
 
-        # Collect results
-        full_text = []
-        segments: list[TranscriptionSegment] = []
-        all_words: list[TranscriptionWord] = []
+        if USE_TRANSFORMERS:
+            # Transformers pipeline API
+            generate_kwargs = {}
+            if language:
+                generate_kwargs["language"] = language
 
-        for i, segment in enumerate(segments_gen):
-            full_text.append(segment.text.strip())
+            # Run transcription with timestamps
+            result = model(
+                str(temp_path),
+                return_timestamps="word" if word_timestamps else True,
+                generate_kwargs=generate_kwargs,
+            )
 
-            words = []
-            if word_timestamps and segment.words:
-                for word in segment.words:
-                    word_obj = TranscriptionWord(
-                        text=word.word,
-                        start=word.start,
-                        end=word.end,
-                        confidence=word.probability,
+            # Parse transformers output
+            text = result.get("text", "")
+            chunks = result.get("chunks", [])
+
+            segments: list[TranscriptionSegment] = []
+            all_words: list[TranscriptionWord] = []
+
+            if chunks:
+                for i, chunk in enumerate(chunks):
+                    chunk_text = chunk.get("text", "").strip()
+                    timestamp = chunk.get("timestamp", (0, 0))
+                    start = timestamp[0] if timestamp[0] is not None else 0
+                    end = timestamp[1] if timestamp[1] is not None else start + 0.1
+
+                    if word_timestamps:
+                        word_obj = TranscriptionWord(
+                            text=chunk_text,
+                            start=start,
+                            end=end,
+                            confidence=0.9,
+                        )
+                        all_words.append(word_obj)
+
+                    # Group words into segments (every 10 words or punctuation)
+                    if i % 10 == 0 or chunk_text.endswith(('.', '!', '?')):
+                        segments.append(
+                            TranscriptionSegment(
+                                id=len(segments),
+                                text=chunk_text,
+                                start=start,
+                                end=end,
+                                confidence=0.9,
+                                words=[word_obj] if word_timestamps else None,
+                            )
+                        )
+            else:
+                # No chunks, create single segment
+                segments.append(
+                    TranscriptionSegment(
+                        id=0,
+                        text=text.strip(),
+                        start=0,
+                        end=audio_duration,
+                        confidence=0.9,
+                        words=None,
                     )
-                    words.append(word_obj)
-                    all_words.append(word_obj)
-
-            avg_confidence = (
-                sum(w.probability for w in (segment.words or []))
-                / max(len(segment.words or []), 1)
-            )
-
-            segments.append(
-                TranscriptionSegment(
-                    id=i,
-                    text=segment.text.strip(),
-                    start=segment.start,
-                    end=segment.end,
-                    confidence=avg_confidence,
-                    words=words if words else None,
                 )
+
+            return TranscriptionResponse(
+                text=text.strip(),
+                segments=segments,
+                words=all_words,
+                language=language or "fr",
+                language_confidence=0.9,
+                duration=audio_duration,
             )
 
-        return TranscriptionResponse(
-            text=" ".join(full_text),
-            segments=segments,
-            words=all_words,
-            language=info.language,
-            language_confidence=info.language_probability,
-            duration=info.duration,
-        )
+        else:
+            # faster-whisper API
+            segments_gen, info = model.transcribe(
+                str(temp_path),
+                language=language,
+                word_timestamps=word_timestamps,
+                vad_filter=True,
+                vad_parameters={"min_silence_duration_ms": 500},
+            )
+
+            # Collect results
+            full_text = []
+            segments: list[TranscriptionSegment] = []
+            all_words: list[TranscriptionWord] = []
+
+            for i, segment in enumerate(segments_gen):
+                full_text.append(segment.text.strip())
+
+                words = []
+                if word_timestamps and segment.words:
+                    for word in segment.words:
+                        word_obj = TranscriptionWord(
+                            text=word.word,
+                            start=word.start,
+                            end=word.end,
+                            confidence=word.probability,
+                        )
+                        words.append(word_obj)
+                        all_words.append(word_obj)
+
+                avg_confidence = (
+                    sum(w.probability for w in (segment.words or []))
+                    / max(len(segment.words or []), 1)
+                )
+
+                segments.append(
+                    TranscriptionSegment(
+                        id=i,
+                        text=segment.text.strip(),
+                        start=segment.start,
+                        end=segment.end,
+                        confidence=avg_confidence,
+                        words=words if words else None,
+                    )
+                )
+
+            return TranscriptionResponse(
+                text=" ".join(full_text),
+                segments=segments,
+                words=all_words,
+                language=info.language,
+                language_confidence=info.language_probability,
+                duration=info.duration,
+            )
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
