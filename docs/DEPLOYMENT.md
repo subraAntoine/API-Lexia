@@ -1,3 +1,8 @@
+---
+layout: default
+title: Deployment Guide
+---
+
 # Deployment Guide / Guide de Déploiement
 
 [English](#english) | [Français](#français)

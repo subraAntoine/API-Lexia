@@ -1,3 +1,8 @@
+---
+layout: default
+title: Production Checklist
+---
+
 # Production Checklist / Liste de Vérification Production
 
 ## Pre-Deployment / Avant Déploiement

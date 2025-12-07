@@ -7,7 +7,7 @@ plugins:
 
 # Site settings
 baseurl: "/API-Lexia"
-url: ""
+url: "https://martialroberge.github.io"
 
 # Navigation
 nav:
@@ -17,8 +17,10 @@ nav:
     url: /API
   - title: Deployment
     url: /DEPLOYMENT
+  - title: Production Checklist
+    url: /PRODUCTION_CHECKLIST
   - title: GitHub
-    url: https://github.com/yourusername/API-Lexia
+    url: https://github.com/MartialRoberge/API-Lexia
 
 # Markdown settings
 markdown: kramdown

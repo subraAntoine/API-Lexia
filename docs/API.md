@@ -1,3 +1,8 @@
+---
+layout: default
+title: API Reference
+---
+
 # API Documentation / Documentation API
 
 [English](#english) | [Français](#français)
