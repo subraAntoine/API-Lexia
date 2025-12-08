@@ -209,9 +209,9 @@ class WhisperBackend(STTBackend):
             # Parse response
             segments = []
             words = []
-            for seg in data.get("segments", []):
+            for seg in data.get("segments") or []:
                 seg_words = []
-                for w in seg.get("words", []):
+                for w in seg.get("words") or []:
                     word = TranscriptionWord(
                         text=w["text"],
                         start=w["start"],
