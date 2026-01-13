@@ -49,7 +49,7 @@ class BaseAPIResponse(StrictBaseModel, Generic[T]):
 
 
 class ErrorDetail(StrictBaseModel):
-    """Detailed error information."""
+    """Detailed error information (legacy format)."""
 
     code: str = Field(..., description="Error code")
     message: str = Field(..., description="Human-readable error message")
@@ -69,7 +69,7 @@ class ErrorDetail(StrictBaseModel):
 
 class ErrorResponse(StrictBaseModel):
     """
-    Standard error response format.
+    Standard error response format (legacy).
 
     Follows RFC 7807 Problem Details pattern.
     """
@@ -77,6 +77,71 @@ class ErrorResponse(StrictBaseModel):
     success: bool = Field(default=False)
     error: ErrorDetail = Field(..., description="Error details")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+# =============================================================================
+# OpenAI-Compatible Error Models
+# =============================================================================
+
+
+class OpenAIErrorDetail(BaseModel):
+    """
+    OpenAI-compatible error detail format.
+    
+    This follows the exact structure used by OpenAI's API for error responses.
+    See: https://platform.openai.com/docs/guides/error-codes
+    """
+    
+    model_config = ConfigDict(extra="allow")
+    
+    message: str = Field(
+        ..., 
+        description="A human-readable error message describing what went wrong.",
+        examples=["Invalid value for 'model': expected string."]
+    )
+    type: str = Field(
+        ..., 
+        description="The type of error returned.",
+        examples=["invalid_request_error", "authentication_error", "rate_limit_error", "server_error"]
+    )
+    param: str | None = Field(
+        default=None, 
+        description="The parameter that caused the error, if applicable.",
+        examples=["model", "messages", "temperature"]
+    )
+    code: str | None = Field(
+        default=None, 
+        description="A short code identifying the error type.",
+        examples=["invalid_api_key", "model_not_found", "context_length_exceeded"]
+    )
+
+
+class OpenAIErrorResponse(BaseModel):
+    """
+    OpenAI-compatible error response wrapper.
+    
+    All API errors are returned in this format to maintain compatibility
+    with OpenAI client libraries and existing integrations.
+    
+    Example:
+    ```json
+    {
+        "error": {
+            "message": "Invalid value for 'model': expected string.",
+            "type": "invalid_request_error",
+            "param": "model",
+            "code": null
+        }
+    }
+    ```
+    """
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    error: OpenAIErrorDetail = Field(
+        ..., 
+        description="Error details following OpenAI's error format."
+    )
 
 
 class PaginationParams(StrictBaseModel):

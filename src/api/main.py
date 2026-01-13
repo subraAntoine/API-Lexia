@@ -18,7 +18,7 @@ from src.core.config import Settings, get_settings
 from src.core.exceptions import LexiaAPIError
 from src.core.logging import configure_logging, get_logger
 from src.db.session import close_db, init_db, get_session_maker
-from src.models.common import ErrorDetail, ErrorResponse, HealthResponse
+from src.models.common import ErrorDetail, ErrorResponse, HealthResponse, OpenAIErrorResponse
 
 
 class DatabaseMiddleware(BaseHTTPMiddleware):
@@ -40,7 +40,7 @@ class DatabaseMiddleware(BaseHTTPMiddleware):
                 await session.close()
 
 # Import routers
-from src.api.routers import diarization, jobs, llm, stt
+from src.api.routers import api_keys, diarization, jobs, llm, stt
 
 
 logger = get_logger(__name__)
@@ -132,7 +132,9 @@ Rate limits are applied per API key. Check response headers:
         redoc_url="/redoc",
         openapi_url="/openapi.json",
         lifespan=lifespan,
+        swagger_ui_init_oauth={},
         openapi_tags=[
+            {"name": "API Keys", "description": "API key management"},
             {"name": "LLM", "description": "Large Language Model endpoints"},
             {"name": "Speech-to-Text", "description": "Audio transcription endpoints"},
             {"name": "Diarization", "description": "Speaker diarization endpoints"},
@@ -140,6 +142,163 @@ Rate limits are applied per API key. Check response headers:
             {"name": "Health", "description": "Health check endpoints"},
         ],
     )
+    
+    # Add OpenAPI security scheme for Bearer token authentication
+    from fastapi.openapi.utils import get_openapi
+    
+    def custom_openapi():
+        if app.openapi_schema:
+            return app.openapi_schema
+        openapi_schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+            tags=app.openapi_tags,
+        )
+        openapi_schema["components"]["securitySchemes"] = {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "API Key",
+                "description": "Enter your API key (e.g., lx_abc123...)",
+            }
+        }
+        
+        # Add OpenAI-compatible error schemas
+        openapi_schema["components"]["schemas"]["OpenAIErrorDetail"] = {
+            "type": "object",
+            "title": "OpenAI Error Detail",
+            "description": "Error detail following OpenAI's error format.",
+            "required": ["message", "type"],
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "A human-readable error message.",
+                    "example": "Invalid value for 'model': expected string."
+                },
+                "type": {
+                    "type": "string",
+                    "description": "The type of error.",
+                    "enum": ["invalid_request_error", "authentication_error", "rate_limit_error", "server_error", "api_error"],
+                    "example": "invalid_request_error"
+                },
+                "param": {
+                    "type": "string",
+                    "nullable": True,
+                    "description": "The parameter that caused the error.",
+                    "example": "model"
+                },
+                "code": {
+                    "type": "string",
+                    "nullable": True,
+                    "description": "A short error code.",
+                    "example": "invalid_api_key"
+                }
+            }
+        }
+        openapi_schema["components"]["schemas"]["OpenAIErrorResponse"] = {
+            "type": "object",
+            "title": "OpenAI Error Response",
+            "description": "Standard error response following OpenAI's API format.",
+            "required": ["error"],
+            "properties": {
+                "error": {
+                    "$ref": "#/components/schemas/OpenAIErrorDetail"
+                }
+            },
+            "example": {
+                "error": {
+                    "message": "Invalid value for 'model': expected string.",
+                    "type": "invalid_request_error",
+                    "param": "model",
+                    "code": None
+                }
+            }
+        }
+        
+        # Add common error responses to all paths
+        error_responses = {
+            "401": {
+                "description": "Authentication Error - Invalid or missing API key",
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/OpenAIErrorResponse"},
+                        "example": {
+                            "error": {
+                                "message": "Invalid API key provided.",
+                                "type": "authentication_error",
+                                "param": None,
+                                "code": "invalid_api_key"
+                            }
+                        }
+                    }
+                }
+            },
+            "422": {
+                "description": "Validation Error - Invalid request parameters",
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/OpenAIErrorResponse"},
+                        "example": {
+                            "error": {
+                                "message": "Invalid value for 'temperature': expected float between 0 and 2.",
+                                "type": "invalid_request_error",
+                                "param": "temperature",
+                                "code": None
+                            }
+                        }
+                    }
+                }
+            },
+            "429": {
+                "description": "Rate Limit Error - Too many requests",
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/OpenAIErrorResponse"},
+                        "example": {
+                            "error": {
+                                "message": "Rate limit exceeded. Please retry after 60 seconds.",
+                                "type": "rate_limit_error",
+                                "param": None,
+                                "code": "rate_limit_exceeded"
+                            }
+                        }
+                    }
+                }
+            },
+            "500": {
+                "description": "Server Error - Internal server error",
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/OpenAIErrorResponse"},
+                        "example": {
+                            "error": {
+                                "message": "An internal server error occurred.",
+                                "type": "server_error",
+                                "param": None,
+                                "code": None
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        # Apply error responses to all endpoints
+        for path in openapi_schema.get("paths", {}).values():
+            for operation in path.values():
+                if isinstance(operation, dict) and "responses" in operation:
+                    for code, response in error_responses.items():
+                        if code not in operation["responses"]:
+                            operation["responses"][code] = response
+        
+        # Apply security globally to all endpoints
+        openapi_schema["security"] = [{"BearerAuth": []}]
+        app.openapi_schema = openapi_schema
+        return app.openapi_schema
+    
+    app.openapi = custom_openapi
 
     # CORS middleware
     app.add_middleware(
@@ -158,56 +317,117 @@ Rate limits are applied per API key. Check response headers:
     async def lexia_error_handler(
         request: Request, exc: LexiaAPIError
     ) -> JSONResponse:
-        """Handle Lexia API errors."""
+        """Handle Lexia API errors with OpenAI-compatible format."""
+        error_type_mapping = {
+            "AUTHENTICATION_ERROR": "invalid_api_key",
+            "INVALID_API_KEY": "invalid_api_key",
+            "AUTHORIZATION_ERROR": "insufficient_permissions",
+            "NOT_FOUND": "invalid_request_error",
+            "MODEL_NOT_FOUND": "model_not_found",
+            "VALIDATION_ERROR": "invalid_request_error",
+            "RATE_LIMIT_EXCEEDED": "rate_limit_exceeded",
+            "SERVICE_UNAVAILABLE": "server_error",
+            "LLM_SERVICE_ERROR": "server_error",
+            "STT_SERVICE_ERROR": "server_error",
+        }
+        
+        error_type = error_type_mapping.get(exc.error_code, "api_error")
+        
         return JSONResponse(
             status_code=exc.status_code,
-            content=exc.to_dict(),
+            content={
+                "error": {
+                    "message": exc.message,
+                    "type": error_type,
+                    "param": exc.details.get("param") if exc.details else None,
+                    "code": exc.error_code.lower() if exc.error_code else None,
+                }
+            },
         )
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        """Handle validation errors."""
-        errors = []
-        for error in exc.errors():
-            errors.append({
-                "loc": error.get("loc", []),
-                "msg": error.get("msg", ""),
-                "type": error.get("type", ""),
-            })
+        """Handle validation errors with OpenAI-compatible format."""
+        errors = exc.errors()
+        if errors:
+            first_error = errors[0]
+            loc = first_error.get("loc", [])
+            # Filter out 'body' from location to get cleaner param names
+            filtered_loc = [str(l) for l in loc if l != "body"]
+            param = ".".join(filtered_loc) if filtered_loc else None
+            
+            # Format message like OpenAI
+            error_msg = first_error.get("msg", "validation error")
+            error_type = first_error.get("type", "")
+            
+            if param:
+                if "missing" in error_type:
+                    message = f"Missing required parameter: '{param}'."
+                elif "type" in error_type:
+                    expected_type = error_type.split(".")[-1] if "." in error_type else "valid value"
+                    message = f"Invalid value for '{param}': {error_msg}."
+                else:
+                    message = f"Invalid value for '{param}': {error_msg}."
+            else:
+                message = f"Request validation failed: {error_msg}."
+        else:
+            param = None
+            message = "Request validation failed."
+
+        logger.warning(
+            "validation_error",
+            path=request.url.path,
+            param=param,
+            message=message,
+        )
 
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content=ErrorResponse(
-                error=ErrorDetail(
-                    code="VALIDATION_ERROR",
-                    message="Request validation failed",
-                    details={"errors": errors},
-                    path=str(request.url.path),
-                )
-            ).model_dump(mode="json"),
+            content={
+                "error": {
+                    "message": message,
+                    "type": "invalid_request_error",
+                    "param": param,
+                    "code": None,
+                }
+            },
         )
 
     @app.exception_handler(Exception)
     async def general_error_handler(
         request: Request, exc: Exception
     ) -> JSONResponse:
-        """Handle unexpected errors."""
-        logger.exception("unhandled_error", path=request.url.path)
+        """Handle unexpected errors with OpenAI-compatible format."""
+        logger.exception(
+            "unhandled_error",
+            path=request.url.path,
+            method=request.method,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+        )
+
+        # In debug mode, include more details
+        if settings.app_debug:
+            message = f"An internal server error occurred: {type(exc).__name__}"
+        else:
+            message = "An internal server error occurred."
 
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=ErrorResponse(
-                error=ErrorDetail(
-                    code="INTERNAL_ERROR",
-                    message="An unexpected error occurred",
-                    path=str(request.url.path),
-                )
-            ).model_dump(mode="json"),
+            content={
+                "error": {
+                    "message": message,
+                    "type": "server_error",
+                    "param": None,
+                    "code": None,
+                }
+            },
         )
 
     # Include routers
+    app.include_router(api_keys.router)
     app.include_router(llm.router)
     app.include_router(stt.router)
     app.include_router(diarization.router)

@@ -149,7 +149,7 @@ def get_api_key_manager(
 
 
 async def validate_api_key(
-    authorization: Annotated[str | None, Header()] = None,
+    authorization: Annotated[str | None, Header(include_in_schema=False)] = None,
     settings: Annotated[Settings, Depends(get_settings)] = None,
 ) -> str:
     """
