@@ -40,7 +40,7 @@ class DatabaseMiddleware(BaseHTTPMiddleware):
                 await session.close()
 
 # Import routers
-from src.api.routers import api_keys, diarization, jobs, llm, stt
+from src.api.routers import diarization, jobs, llm, stt
 
 
 logger = get_logger(__name__)
@@ -427,7 +427,6 @@ Rate limits are applied per API key. Check response headers:
         )
 
     # Include routers
-    app.include_router(api_keys.router)
     app.include_router(llm.router)
     app.include_router(stt.router)
     app.include_router(diarization.router)

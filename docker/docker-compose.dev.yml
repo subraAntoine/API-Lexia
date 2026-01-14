@@ -37,6 +37,7 @@ services:
       - API_KEY_SALT=dev-salt-change-in-production
     volumes:
       - ../src:/app/src:ro
+      - ../scripts:/app/scripts:ro
       - dev-audio-data:/app/data
       - dev-logs:/app/logs
     depends_on:
