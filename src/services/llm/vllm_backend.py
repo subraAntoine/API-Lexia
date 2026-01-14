@@ -160,8 +160,18 @@ class VLLMBackend(LLMBackend):
         request: ChatCompletionRequest,
     ) -> ChatCompletionResponse:
         """Generate chat completion via vLLM."""
-        # Validate model
+        start_time = time.time()
+        
+        # Validate model exists in registry
         model_id = self.resolve_model_id(request.model)
+        model_config = self.registry.get(model_id)
+        if model_config is None:
+            logger.warning(
+                "model_not_found_in_registry",
+                requested_model=request.model,
+                resolved_model=model_id,
+            )
+            raise ModelNotFoundError(model_id)
 
         try:
             client = await self._get_client()
@@ -172,6 +182,8 @@ class VLLMBackend(LLMBackend):
                 "vllm_request",
                 model=model_id,
                 messages_count=len(request.messages),
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
             )
 
             response = await client.post(
@@ -189,13 +201,30 @@ class VLLMBackend(LLMBackend):
             choices = []
             for choice_data in data.get("choices", []):
                 message = choice_data.get("message", {})
+                
+                # Parse tool_calls if present
+                tool_calls = None
+                if message.get("tool_calls"):
+                    from src.models.llm import ToolCall, FunctionCall, ToolType
+                    tool_calls = [
+                        ToolCall(
+                            id=tc.get("id", f"call_{uuid.uuid4().hex[:8]}"),
+                            type=ToolType(tc.get("type", "function")),
+                            function=FunctionCall(
+                                name=tc.get("function", {}).get("name", ""),
+                                arguments=tc.get("function", {}).get("arguments", "{}"),
+                            ),
+                        )
+                        for tc in message.get("tool_calls", [])
+                    ]
+                
                 choices.append(
                     Choice(
                         index=choice_data.get("index", 0),
                         message=ChoiceMessage(
                             role=MessageRole(message.get("role", "assistant")),
                             content=message.get("content"),
-                            tool_calls=None,  # Parse if present
+                            tool_calls=tool_calls,
                         ),
                         finish_reason=choice_data.get("finish_reason"),
                     )
@@ -206,6 +235,16 @@ class VLLMBackend(LLMBackend):
                 prompt_tokens=usage_data.get("prompt_tokens", 0),
                 completion_tokens=usage_data.get("completion_tokens", 0),
                 total_tokens=usage_data.get("total_tokens", 0),
+            )
+
+            duration_ms = (time.time() - start_time) * 1000
+            logger.info(
+                "vllm_request_completed",
+                model=model_id,
+                duration_ms=round(duration_ms, 2),
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                finish_reason=choices[0].finish_reason if choices else None,
             )
 
             return ChatCompletionResponse(
@@ -234,9 +273,22 @@ class VLLMBackend(LLMBackend):
         request: ChatCompletionRequest,
     ) -> AsyncIterator[ChatCompletionChunk]:
         """Generate chat completion with streaming via vLLM."""
+        start_time = time.time()
         model_id = self.resolve_model_id(request.model)
+        
+        # Validate model exists in registry
+        model_config = self.registry.get(model_id)
+        if model_config is None:
+            logger.warning(
+                "model_not_found_in_registry",
+                requested_model=request.model,
+                resolved_model=model_id,
+            )
+            raise ModelNotFoundError(model_id)
+        
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
         created = int(time.time())
+        total_completion_tokens = 0
 
         try:
             client = await self._get_client()
@@ -258,6 +310,7 @@ class VLLMBackend(LLMBackend):
                     raise ModelNotFoundError(model_id)
                 response.raise_for_status()
 
+                finish_reason = None
                 async for line in response.aiter_lines():
                     if not line:
                         continue
@@ -274,6 +327,8 @@ class VLLMBackend(LLMBackend):
 
                             for choice_data in data.get("choices", []):
                                 delta = choice_data.get("delta", {})
+                                if choice_data.get("finish_reason"):
+                                    finish_reason = choice_data.get("finish_reason")
                                 choices.append(
                                     StreamChoice(
                                         index=choice_data.get("index", 0),
@@ -299,6 +354,7 @@ class VLLMBackend(LLMBackend):
                                     ),
                                     total_tokens=usage_data.get("total_tokens", 0),
                                 )
+                                total_completion_tokens = usage.completion_tokens
 
                             yield ChatCompletionChunk(
                                 id=completion_id,
@@ -315,6 +371,16 @@ class VLLMBackend(LLMBackend):
                                 line=data_str[:100],
                             )
                             continue
+
+                # Log streaming completion
+                duration_ms = (time.time() - start_time) * 1000
+                logger.info(
+                    "vllm_stream_completed",
+                    model=model_id,
+                    duration_ms=round(duration_ms, 2),
+                    completion_tokens=total_completion_tokens,
+                    finish_reason=finish_reason,
+                )
 
         except httpx.HTTPStatusError as e:
             logger.error("vllm_stream_http_error", status=e.response.status_code)
@@ -339,6 +405,11 @@ class VLLMBackend(LLMBackend):
             if response.status_code == 200:
                 data = response.json()
                 loaded_models = {m["id"] for m in data.get("data", [])}
+                
+                logger.debug(
+                    "vllm_models_loaded",
+                    loaded_models=list(loaded_models),
+                )
 
                 # Update status based on what's loaded
                 for model in models:
@@ -347,19 +418,57 @@ class VLLMBackend(LLMBackend):
                         model.status = "available"
                     else:
                         model.status = "loading"
-        except Exception:
+            else:
+                logger.warning(
+                    "vllm_models_request_failed",
+                    status_code=response.status_code,
+                )
+                for model in models:
+                    model.status = "unavailable"
+        except Exception as e:
             # If we can't reach vLLM, mark models as unavailable
+            logger.warning(
+                "vllm_unreachable_for_models",
+                error=str(e),
+                service_url=self.service_url,
+            )
             for model in models:
                 model.status = "unavailable"
 
         return models
 
     async def get_model(self, model_id: str) -> ModelInfo | None:
-        """Get specific model info."""
+        """
+        Get specific model info.
+        
+        First checks if model exists in registry, then gets its status.
+        """
+        # First check if model exists in registry (fast path)
+        config = self.registry.get(model_id)
+        if config is None:
+            logger.debug(
+                "model_not_in_registry",
+                model_id=model_id,
+                available_models=[m.model_id for m in self.registry.list_models()],
+            )
+            return None
+        
+        # Model exists in registry, get full list with status
         models = await self.get_models()
         for model in models:
             if model.id == model_id:
+                logger.debug(
+                    "model_found",
+                    model_id=model_id,
+                    status=model.status,
+                )
                 return model
+        
+        # Should not happen if registry is consistent
+        logger.warning(
+            "model_in_registry_but_not_in_list",
+            model_id=model_id,
+        )
         return None
 
     async def health_check(self) -> bool:

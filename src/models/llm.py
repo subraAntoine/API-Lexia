@@ -17,6 +17,7 @@ class MessageRole(str, Enum):
     """Roles for chat messages."""
 
     SYSTEM = "system"
+    DEVELOPER = "developer"  # New OpenAI role (alias for system in some models)
     USER = "user"
     ASSISTANT = "assistant"
     TOOL = "tool"

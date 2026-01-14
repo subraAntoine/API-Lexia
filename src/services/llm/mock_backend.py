@@ -236,7 +236,17 @@ class MockLLMBackend(LLMBackend):
         return models
 
     async def get_model(self, model_id: str) -> ModelInfo | None:
-        """Get specific model info."""
+        """
+        Get specific model info.
+        
+        First checks if model exists in registry for fast rejection.
+        """
+        # Fast path: check registry first
+        config = self.registry.get(model_id)
+        if config is None:
+            return None
+        
+        # Get model with status
         models = await self.get_models()
         for model in models:
             if model.id == model_id:

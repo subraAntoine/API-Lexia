@@ -30,7 +30,7 @@ class TranscriptionStatus(str, Enum):
     QUEUED = "queued"
     PROCESSING = "processing"
     COMPLETED = "completed"
-    FAILED = "failed"
+    ERROR = "error"  # AssemblyAI uses 'error' instead of 'failed'
 
 
 class LanguageCode(str, Enum):
@@ -240,10 +240,10 @@ class TranscriptionResponse(StrictBaseModel):
         description="Speaker-attributed utterances",
     )
 
-    # Error info (if failed)
+    # Error info (if status is "error")
     error: str | None = Field(
         default=None,
-        description="Error message if status is failed",
+        description="Error message if status is 'error'",
     )
 
     # Metadata
@@ -262,6 +262,10 @@ class TranscriptionJob(StrictBaseModel):
         description="Current status",
     )
     created_at: datetime = Field(..., description="Creation timestamp")
+    audio_url: str | None = Field(
+        default=None,
+        description="Source audio URL (if provided)",
+    )
     estimated_completion: datetime | None = Field(
         default=None,
         description="Estimated completion time",

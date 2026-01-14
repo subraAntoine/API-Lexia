@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.auth import CurrentUser
@@ -20,7 +20,9 @@ from src.core.exceptions import (
     FileTooLargeError,
     InvalidAudioFormatError,
     TranscriptionNotFoundError,
+    ValidationError,
 )
+from src.core.logging import get_logger
 from src.core.rate_limit import RateLimitedUser
 from src.db.repositories.job import JobRepository
 from src.db.repositories.transcription import TranscriptionRepository
@@ -37,6 +39,7 @@ from src.services.storage.factory import get_storage_backend
 from src.workers.tasks.transcription import process_transcription
 
 router = APIRouter(prefix="/v1", tags=["Speech-to-Text"])
+logger = get_logger(__name__)
 
 
 SUPPORTED_FORMATS = ["wav", "mp3", "m4a", "flac", "ogg", "webm"]
@@ -74,13 +77,42 @@ async def create_transcription(
     Upload an audio file or provide a URL for transcription.
     Returns a job ID for polling the result.
     """
+    start_time = time.time()
     storage = get_storage_backend(settings)
     job_repo = JobRepository(db)
     trans_repo = TranscriptionRepository(db)
 
+    # Validate input: must provide either audio file or audio_url
+    if audio is None and audio_url is None:
+        logger.warning(
+            "transcription_validation_error",
+            error="No audio source provided",
+            user_id=user.user_id,
+        )
+        raise ValidationError(
+            message="Either 'audio' file or 'audio_url' must be provided.",
+            details={"param": "audio"},
+        )
+
+    # Validate audio_url format if provided
+    if audio_url is not None:
+        if not (audio_url.startswith("http://") or audio_url.startswith("https://")):
+            logger.warning(
+                "transcription_validation_error",
+                error="Invalid audio_url format",
+                audio_url=audio_url[:100],
+                user_id=user.user_id,
+            )
+            raise ValidationError(
+                message="audio_url must be a valid HTTP(S) URL.",
+                details={"param": "audio_url", "value": audio_url[:100]},
+            )
+
     # Determine audio source
     audio_storage_key = None
     source_url = audio_url
+    audio_format = None
+    file_size = None
 
     if audio is not None:
         # Validate format
@@ -88,13 +120,19 @@ async def create_transcription(
 
         # Check file size
         audio.file.seek(0, 2)
-        size = audio.file.tell()
+        file_size = audio.file.tell()
         audio.file.seek(0)
 
         max_size = settings.stt_max_file_size_mb * 1024 * 1024
-        if size > max_size:
+        if file_size > max_size:
+            logger.warning(
+                "transcription_file_too_large",
+                file_size_mb=file_size / (1024 * 1024),
+                max_size_mb=settings.stt_max_file_size_mb,
+                user_id=user.user_id,
+            )
             raise FileTooLargeError(
-                size / (1024 * 1024),
+                file_size / (1024 * 1024),
                 settings.stt_max_file_size_mb,
             )
 
@@ -105,11 +143,16 @@ async def create_transcription(
             prefix="transcriptions",
         )
         await storage.upload(audio_storage_key, content, f"audio/{audio_format}")
+        
+        logger.debug(
+            "audio_uploaded_to_storage",
+            storage_key=audio_storage_key,
+            file_size=file_size,
+            format=audio_format,
+        )
 
     elif audio_url is not None:
         source_url = audio_url
-    else:
-        raise InvalidAudioFormatError("none", SUPPORTED_FORMATS)
 
     # Create job
     job = await job_repo.create(
@@ -150,10 +193,23 @@ async def create_transcription(
         await job_repo.set_celery_task_id(job.id, task.id)
         await db.commit()
 
+    duration_ms = (time.time() - start_time) * 1000
+    logger.info(
+        "transcription_job_created",
+        job_id=str(job.id),
+        transcription_id=str(transcription.id),
+        language=language_code.value,
+        speaker_diarization=speaker_diarization,
+        has_webhook=webhook_url is not None,
+        duration_ms=round(duration_ms, 2),
+        user_id=user.user_id,
+    )
+
     return TranscriptionJob(
         id=str(transcription.id),
         status=TranscriptionStatus.QUEUED,
         created_at=job.created_at,
+        audio_url=source_url,
     )
 
 
@@ -162,6 +218,11 @@ async def create_transcription(
     response_model=TranscriptionResponse,
     summary="Get transcription",
     description="Get the status and result of a transcription.",
+    responses={
+        200: {"description": "Transcription retrieved successfully"},
+        400: {"description": "Invalid transcription ID format"},
+        404: {"description": "Transcription not found"},
+    },
 )
 async def get_transcription(
     transcription_id: str,
@@ -172,27 +233,76 @@ async def get_transcription(
     Get transcription by ID.
 
     Returns the transcription status and result if complete.
+    The response format follows AssemblyAI conventions.
     """
+    start_time = time.time()
+
+    # Validate UUID format
+    try:
+        parsed_id = uuid.UUID(transcription_id)
+    except ValueError:
+        logger.warning(
+            "invalid_transcription_id_format",
+            transcription_id=transcription_id,
+            user_id=user.user_id,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "message": f"Invalid transcription ID format: {transcription_id}",
+                    "type": "invalid_request_error",
+                    "param": "transcription_id",
+                    "code": "invalid_id_format",
+                }
+            },
+        )
+
     trans_repo = TranscriptionRepository(db)
+    transcription = await trans_repo.get_by_id(parsed_id)
 
-    transcription = await trans_repo.get_by_id(uuid.UUID(transcription_id))
     if transcription is None:
+        logger.info(
+            "transcription_not_found",
+            transcription_id=transcription_id,
+            user_id=user.user_id,
+        )
         raise TranscriptionNotFoundError(transcription_id)
 
-    # Check ownership
+    # Check ownership (return 404 to avoid leaking existence)
     if transcription.user_id != user.user_id:
+        logger.warning(
+            "transcription_access_denied",
+            transcription_id=transcription_id,
+            owner_id=transcription.user_id,
+            requester_id=user.user_id,
+        )
         raise TranscriptionNotFoundError(transcription_id)
 
-    # Map status
+    # Map status (database values to API enum)
     status_map = {
+        "queued": TranscriptionStatus.QUEUED,
         "processing": TranscriptionStatus.PROCESSING,
         "completed": TranscriptionStatus.COMPLETED,
-        "failed": TranscriptionStatus.FAILED,
+        "failed": TranscriptionStatus.ERROR,
+        "error": TranscriptionStatus.ERROR,
     }
+    status = status_map.get(transcription.status, TranscriptionStatus.QUEUED)
+
+    duration_ms = (time.time() - start_time) * 1000
+    logger.info(
+        "transcription_retrieved",
+        transcription_id=transcription_id,
+        status=status.value,
+        has_text=transcription.text is not None,
+        audio_duration=transcription.audio_duration,
+        duration_ms=round(duration_ms, 2),
+        user_id=user.user_id,
+    )
 
     return TranscriptionResponse(
         id=str(transcription.id),
-        status=status_map.get(transcription.status, TranscriptionStatus.QUEUED),
+        status=status,
         created_at=transcription.created_at,
         completed_at=transcription.completed_at,
         audio_url=transcription.audio_url,
@@ -205,7 +315,7 @@ async def get_transcription(
         speakers=transcription.speakers,
         utterances=transcription.utterances,
         error=transcription.error,
-        metadata=transcription.metadata,
+        metadata=transcription.extra_data,  # SQLAlchemy reserves 'metadata'
     )
 
 
@@ -213,30 +323,89 @@ async def get_transcription(
     "/transcriptions/sync",
     response_model=TranscriptionResponse,
     summary="Sync transcription",
-    description="Transcribe audio synchronously (for short files only).",
+    description="""
+Transcribe audio synchronously (blocking request).
+
+**Use cases:**
+- Short audio files (<5 minutes)
+- Real-time applications requiring immediate results
+- Testing and demos
+
+**Limitations:**
+- Maximum file size: 50MB
+- Request timeout applies
+- No webhook support
+- No persistent storage (result not saved)
+
+For longer files or production workloads, use the async `POST /v1/transcriptions` endpoint.
+""",
+    responses={
+        200: {"description": "Transcription completed successfully"},
+        400: {"description": "Invalid audio format or file too large"},
+        422: {"description": "Validation error"},
+        500: {"description": "Transcription service error"},
+    },
 )
 async def sync_transcription(
     user: RateLimitedUser,
     settings: Annotated[Settings, Depends(get_settings)],
-    audio: UploadFile = File(..., description="Audio file to transcribe"),
-    language_code: LanguageCode = Form(LanguageCode.FR),
-    word_timestamps: bool = Form(True),
+    audio: UploadFile = File(..., description="Audio file to transcribe (wav, mp3, m4a, flac, ogg, webm)"),
+    language_code: LanguageCode = Form(LanguageCode.FR, description="Language code or 'auto' for detection"),
+    word_timestamps: bool = Form(True, description="Include word-level timestamps"),
 ) -> TranscriptionResponse:
     """
     Synchronous transcription.
 
-    For short audio files (<5 minutes). Returns result immediately.
-    For longer files, use the async endpoint.
+    Transcribes audio and returns the result immediately (blocking).
+    Best for short audio files (<5 minutes, <50MB).
+
+    The transcription is NOT persisted - use async endpoint for that.
     """
+    start_time = time.time()
+    request_id = str(uuid.uuid4())
+
+    logger.info(
+        "sync_transcription_started",
+        request_id=request_id,
+        filename=audio.filename,
+        content_type=audio.content_type,
+        language_code=language_code.value,
+        word_timestamps=word_timestamps,
+        user_id=user.user_id,
+    )
+
     # Validate format
-    audio_format = validate_audio_format(audio.filename or "audio.wav")
+    try:
+        audio_format = validate_audio_format(audio.filename or "audio.wav")
+    except InvalidAudioFormatError as e:
+        logger.warning(
+            "sync_transcription_invalid_format",
+            request_id=request_id,
+            filename=audio.filename,
+            error=str(e),
+        )
+        raise
 
     # Check file size (limit for sync: 50MB)
     audio.file.seek(0, 2)
     size = audio.file.tell()
     audio.file.seek(0)
 
+    logger.debug(
+        "sync_transcription_file_info",
+        request_id=request_id,
+        size_bytes=size,
+        size_mb=round(size / (1024 * 1024), 2),
+        format=audio_format,
+    )
+
     if size > 50 * 1024 * 1024:
+        logger.warning(
+            "sync_transcription_file_too_large",
+            request_id=request_id,
+            size_mb=round(size / (1024 * 1024), 2),
+            max_mb=50,
+        )
         raise FileTooLargeError(
             size / (1024 * 1024),
             50,
@@ -251,11 +420,14 @@ async def sync_transcription(
     try:
         # Transcribe
         stt_backend = get_stt_backend(settings)
+
+        transcribe_start = time.time()
         result = await stt_backend.transcribe(
             temp_path,
             language=language_code.value if language_code != LanguageCode.AUTO else None,
             word_timestamps=word_timestamps,
         )
+        transcribe_duration_ms = (time.time() - transcribe_start) * 1000
 
         # Build response
         segments = [
@@ -278,8 +450,25 @@ async def sync_transcription(
             for w in result.words
         ] if word_timestamps else None
 
+        total_duration_ms = (time.time() - start_time) * 1000
+
+        logger.info(
+            "sync_transcription_completed",
+            request_id=request_id,
+            audio_duration=result.duration,
+            text_length=len(result.text) if result.text else 0,
+            segments_count=len(segments),
+            words_count=len(words) if words else 0,
+            language_detected=result.language,
+            language_confidence=result.language_confidence,
+            transcribe_duration_ms=round(transcribe_duration_ms, 2),
+            total_duration_ms=round(total_duration_ms, 2),
+            realtime_factor=round(result.duration / (total_duration_ms / 1000), 2) if result.duration > 0 else 0,
+            user_id=user.user_id,
+        )
+
         return TranscriptionResponse(
-            id=str(uuid.uuid4()),
+            id=request_id,
             status=TranscriptionStatus.COMPLETED,
             created_at=datetime.now(timezone.utc),
             completed_at=datetime.now(timezone.utc),
@@ -291,6 +480,28 @@ async def sync_transcription(
             language_confidence=result.language_confidence,
         )
 
+    except Exception as e:
+        total_duration_ms = (time.time() - start_time) * 1000
+        logger.error(
+            "sync_transcription_failed",
+            request_id=request_id,
+            error=str(e),
+            error_type=type(e).__name__,
+            duration_ms=round(total_duration_ms, 2),
+            user_id=user.user_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": {
+                    "message": f"Transcription failed: {str(e)}",
+                    "type": "transcription_error",
+                    "param": None,
+                    "code": "stt_service_error",
+                }
+            },
+        )
+
     finally:
         temp_path.unlink(missing_ok=True)
 
@@ -300,6 +511,11 @@ async def sync_transcription(
     status_code=204,
     summary="Delete transcription",
     description="Delete a transcription and its associated data.",
+    responses={
+        204: {"description": "Transcription deleted successfully"},
+        400: {"description": "Invalid transcription ID format"},
+        404: {"description": "Transcription not found"},
+    },
 )
 async def delete_transcription(
     transcription_id: str,
@@ -310,22 +526,79 @@ async def delete_transcription(
     """
     Delete a transcription.
 
-    Removes the transcription record and associated audio file.
+    Removes the transcription record and associated audio file from storage.
+    This action is irreversible.
     """
+    start_time = time.time()
+
+    # Validate UUID format
+    try:
+        parsed_id = uuid.UUID(transcription_id)
+    except ValueError:
+        logger.warning(
+            "invalid_transcription_id_format_delete",
+            transcription_id=transcription_id,
+            user_id=user.user_id,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "message": f"Invalid transcription ID format: {transcription_id}",
+                    "type": "invalid_request_error",
+                    "param": "transcription_id",
+                    "code": "invalid_id_format",
+                }
+            },
+        )
+
     trans_repo = TranscriptionRepository(db)
     storage = get_storage_backend(settings)
 
-    transcription = await trans_repo.get_by_id(uuid.UUID(transcription_id))
+    transcription = await trans_repo.get_by_id(parsed_id)
     if transcription is None:
+        logger.info(
+            "transcription_not_found_delete",
+            transcription_id=transcription_id,
+            user_id=user.user_id,
+        )
         raise TranscriptionNotFoundError(transcription_id)
 
+    # Check ownership (return 404 to avoid leaking existence)
     if transcription.user_id != user.user_id:
+        logger.warning(
+            "transcription_delete_access_denied",
+            transcription_id=transcription_id,
+            owner_id=transcription.user_id,
+            requester_id=user.user_id,
+        )
         raise TranscriptionNotFoundError(transcription_id)
 
     # Delete audio from storage
+    audio_deleted = False
     if transcription.audio_storage_key:
-        await storage.delete(transcription.audio_storage_key)
+        try:
+            await storage.delete(transcription.audio_storage_key)
+            audio_deleted = True
+        except Exception as e:
+            logger.error(
+                "transcription_audio_delete_failed",
+                transcription_id=transcription_id,
+                storage_key=transcription.audio_storage_key,
+                error=str(e),
+            )
+            # Continue with DB deletion even if storage fails
 
     # Delete record
     await trans_repo.delete(transcription.id)
     await db.commit()
+
+    duration_ms = (time.time() - start_time) * 1000
+    logger.info(
+        "transcription_deleted",
+        transcription_id=transcription_id,
+        audio_deleted=audio_deleted,
+        had_audio=transcription.audio_storage_key is not None,
+        duration_ms=round(duration_ms, 2),
+        user_id=user.user_id,
+    )
