@@ -293,6 +293,10 @@ class Speaker(StrictBaseModel):
         default=0,
         description="Number of speech segments",
     )
+    percentage: float = Field(
+        default=0.0,
+        description="Percentage of total speaking time",
+    )
     avg_segment_duration: float = Field(
         default=0.0,
         description="Average segment duration",
