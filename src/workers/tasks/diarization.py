@@ -125,6 +125,7 @@ async def _process_diarization_async(
                         "label": s.label,
                         "total_duration": s.total_duration,
                         "num_segments": s.num_segments,
+                        "percentage": s.percentage if hasattr(s, 'percentage') else 0.0,
                     }
                     for s in result.speakers
                 ]
@@ -142,8 +143,12 @@ async def _process_diarization_async(
                 stats = None
                 if result.stats:
                     stats = {
+                        "version": result.stats.version,
+                        "model": result.stats.model,
                         "num_speakers": result.stats.num_speakers,
                         "num_segments": result.stats.num_segments,
+                        "num_overlaps": result.stats.num_overlaps,
+                        "overlap_duration": result.stats.overlap_duration,
                         "audio_duration": result.stats.audio_duration,
                         "processing_time": result.stats.processing_time,
                     }
