@@ -123,3 +123,15 @@ async def close_db() -> None:
         _engine = None
         _async_session_maker = None
         logger.info("database_connections_closed")
+
+
+def reset_db_engine() -> None:
+    """
+    Reset database engine (sync version for Celery workers).
+    
+    Call this when starting a new event loop to avoid
+    'Future attached to a different loop' errors.
+    """
+    global _engine, _async_session_maker
+    _engine = None
+    _async_session_maker = None

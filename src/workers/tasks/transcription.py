@@ -13,6 +13,12 @@ from src.workers.celery_app import app
 
 def run_async(coro):
     """Run async function in sync context."""
+    # Reset DB engine to avoid 'Future attached to a different loop' errors
+    # This is necessary because Celery forks workers and the old engine
+    # is bound to the parent process's event loop
+    from src.db.session import reset_db_engine
+    reset_db_engine()
+    
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
