@@ -403,9 +403,18 @@ async def diarize(
 
         processing_time = time.time() - start_time
 
-        # Parse results
+        # Parse results - pyannote 4.x returns different format
         segments: list[SpeakerSegment] = []
-        for turn, _, speaker in diarization.itertracks(yield_label=True):
+        
+        # Handle both pyannote 3.x (itertracks) and 4.x (direct iteration)
+        if hasattr(diarization, 'itertracks'):
+            # pyannote 3.x API
+            tracks = diarization.itertracks(yield_label=True)
+        else:
+            # pyannote 4.x API - iterate directly
+            tracks = [(segment, None, speaker) for segment, speaker in diarization.itersegments()]
+        
+        for turn, _, speaker in tracks:
             duration = turn.end - turn.start
             if duration >= min_segment_duration:
                 segments.append(
@@ -493,7 +502,12 @@ def _merge_gaps(segments: list[SpeakerSegment], max_gap: float) -> list[SpeakerS
 def _detect_overlaps(diarization) -> list[OverlapSegment]:
     """Detect overlapping speech segments."""
     overlaps: list[OverlapSegment] = []
-    turns = list(diarization.itertracks(yield_label=True))
+    
+    # Handle both pyannote 3.x (itertracks) and 4.x (direct iteration)
+    if hasattr(diarization, 'itertracks'):
+        turns = list(diarization.itertracks(yield_label=True))
+    else:
+        turns = [(segment, None, speaker) for segment, speaker in diarization.itersegments()]
 
     for i, (turn1, _, speaker1) in enumerate(turns):
         for turn2, _, speaker2 in turns[i + 1:]:
