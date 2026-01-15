@@ -151,22 +151,23 @@ class PyannoteBackend(DiarizationBackend):
             return pipeline(str(audio_path), **pipeline_kwargs)
 
         loop = asyncio.get_event_loop()
-        diarization = await loop.run_in_executor(None, _run_diarization)
+        diarization_output = await loop.run_in_executor(None, _run_diarization)
 
         processing_time = time.time() - start_time
 
-        # Parse results - handle both pyannote 3.x and 4.x
+        # Parse results - pyannote 4.x returns DiarizeOutput with speaker_diarization attribute
+        # pyannote 3.x returns Annotation directly
+        if hasattr(diarization_output, 'speaker_diarization'):
+            # pyannote 4.x API - get the Annotation from DiarizeOutput
+            diarization = diarization_output.speaker_diarization
+        else:
+            # pyannote 3.x API - already an Annotation
+            diarization = diarization_output
+        
         segments: list[SpeakerSegment] = []
         
-        # Handle both pyannote 3.x (itertracks) and 4.x (direct iteration)
-        if hasattr(diarization, 'itertracks'):
-            # pyannote 3.x API
-            tracks = diarization.itertracks(yield_label=True)
-        else:
-            # pyannote 4.x API - iterate directly
-            tracks = [(segment, None, speaker) for segment, speaker in diarization.itersegments()]
-        
-        for turn, _, speaker in tracks:
+        # Now use itertracks on the Annotation object
+        for turn, _, speaker in diarization.itertracks(yield_label=True):
             duration = turn.end - turn.start
             if duration >= min_segment_duration:
                 segments.append(
@@ -259,11 +260,11 @@ class PyannoteBackend(DiarizationBackend):
         """Detect overlapping speech segments."""
         overlaps: list[OverlapSegment] = []
 
-        # Get all turns - handle both pyannote 3.x and 4.x
-        if hasattr(diarization, 'itertracks'):
-            turns = list(diarization.itertracks(yield_label=True))
-        else:
-            turns = [(segment, None, speaker) for segment, speaker in diarization.itersegments()]
+        # Handle pyannote 4.x DiarizeOutput - extract Annotation first
+        if hasattr(diarization, 'speaker_diarization'):
+            diarization = diarization.speaker_diarization
+        
+        turns = list(diarization.itertracks(yield_label=True))
 
         for i, (turn1, _, speaker1) in enumerate(turns):
             for turn2, _, speaker2 in turns[i + 1 :]:
