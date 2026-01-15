@@ -161,9 +161,10 @@ def load_diarization():
     if diarization_pipeline is None:
         from pyannote.audio import Pipeline
         print(f"Loading Diarization model: {DIARIZATION_MODEL}")
+        # Note: pyannote-audio 4.x uses 'token' instead of 'use_auth_token'
         diarization_pipeline = Pipeline.from_pretrained(
             DIARIZATION_MODEL,
-            use_auth_token=HF_TOKEN if HF_TOKEN else None,
+            token=HF_TOKEN if HF_TOKEN else None,
         )
         if DEVICE == "cuda" and torch.cuda.is_available():
             diarization_pipeline.to(torch.device("cuda"))
