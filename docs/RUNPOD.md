@@ -48,7 +48,7 @@ apt-get install -y libcudnn8
 
 # Clone repository
 cd /workspace
-git clone https://github.com/MartialRoberge/API-Lexia.git
+git clone https://github.com/subraAntoine/API-Lexia
 cd API-Lexia
 
 # Create virtual environment
@@ -85,10 +85,9 @@ service postgresql start
 # Configure authentication (run as one block)
 cat > /etc/postgresql/14/main/pg_hba.conf << 'EOF'
 local   all             postgres                                peer
-local   all             all                                     trust
-host    all             all             127.0.0.1/32            trust
-host    all             all             ::1/128                 trust
-host    all             all             0.0.0.0/0               trust
+local   all             all                                     md5
+host    all             all             127.0.0.1/32            md5
+host    all             all             ::1/128                 md5
 EOF
 
 # Restart PostgreSQL
@@ -243,25 +242,13 @@ export DATABASE_URL="postgresql+asyncpg://lexia:lexia123@localhost:5432/lexia"
 python scripts/create_api_key.py --name "Production Key"
 
 # ⚠️ COPIE LA CLÉ AFFICHÉE ! Elle ne sera plus visible après.
-```
 
-**Alternative manuelle** (si le script ne marche pas) :
-
-```bash
-# 1. Générer la clé et le hash
-python3 << 'EOF'
-import hashlib
-import secrets
-salt = "your-salt-16-chars"
-random_part = secrets.token_hex(20)
-api_key = f"lx_{random_part}"
-key_hash = hashlib.sha256((salt + api_key[3:]).encode()).hexdigest()
-print(f"Clé API: {api_key}")
-print(f"Hash: {key_hash}")
-EOF
-
-# 2. Insérer dans la base (remplace HASH_ICI par le hash affiché)
-su - postgres -c "psql -d lexia -c \"INSERT INTO api_keys (id, key_hash, name, user_id, permissions, rate_limit, is_revoked, created_at, updated_at) VALUES (gen_random_uuid(), 'HASH_ICI', 'Production Key', 'user-1', '[\\\"*\\\"]', 60, false, now(), now());\""
+# Options disponibles :
+#   --name "Nom"        : Nom descriptif
+#   --user-id "user-1"  : ID utilisateur
+#   --rate-limit 100    : Limite requêtes/minute
+#   --permissions "*"   : Permissions ("*" ou "llm,stt,jobs")
+#   --no-db             : Générer sans insertion (affiche SQL)
 ```
 
 ### 7. Create Startup Script
@@ -295,7 +282,8 @@ export LLM_SERVICE_URL="http://localhost:8005"
 export STT_SERVICE_URL="http://localhost:8002"
 export STORAGE_BACKEND="local"
 export LOCAL_STORAGE_PATH="/workspace/API-Lexia/data"
-export HF_TOKEN="hf_your_huggingface_token_here"
+export HF_TOKEN=token
+
 
 # STT Configuration (Gilbert distilled model - 2-4x faster, optimized for French)
 export USE_TRANSFORMERS=true
@@ -328,8 +316,15 @@ else
     echo "  ✗ API Gateway failed to start"
 fi
 
+# Start Celery worker for async jobs
+echo "[4/6] Starting Celery worker..."
+celery -A src.workers.celery_app worker --loglevel=info --concurrency=2 &
+CELERY_PID=$!
+sleep 3
+echo "  ✓ Celery worker started (PID: $CELERY_PID)"
+
 # Start vLLM (foreground, uses ~20GB GPU)
-echo "[4/5] Starting vLLM (this takes 2-3 minutes)..."
+echo "[5/6] Starting vLLM (this takes 2-3 minutes)..."
 echo "  Model: Marsouuu/general7Bv2-ECE-PRYMMAL-Martial"
 echo "  GPU Memory: 50%"
 
@@ -357,6 +352,27 @@ chmod +x /workspace/start.sh
 ```
 
 Wait for vLLM to show `Application startup complete`.
+
+### Updating the Code on RunPod
+
+If you need to update to the latest version:
+
+```bash
+# Stop all services first
+pkill -9 -f python
+pkill -9 -f celery
+
+# Pull latest changes
+cd /workspace/API-Lexia
+git pull origin main
+
+# Reinstall dependencies if needed
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Restart services
+/workspace/start.sh
+```
 
 ### 9. Test All Services
 
@@ -471,7 +487,7 @@ fuser -k 8005/tcp
 │  GPU Memory: ~23GB / 46GB available                        │
 │                                                             │
 │  Tech Stack:                                               │
-│  - vLLM 0.12 + torch 2.9.0                                │
+│  - vLLM + torch 2.9.0                                      │
 │  - faster-whisper + ctranslate2 4.4.0                     │
 │  - cuDNN 8 (libcudnn8)                                    │
 └─────────────────────────────────────────────────────────────┘

@@ -128,7 +128,7 @@ Rate limits are applied per API key. Check response headers:
 **Version:** 1.0.0 | **Contact:** contact@lexia.fr
         """,
         version="1.0.0",
-        docs_url="/docs" if settings.app_debug else None,
+        docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
         lifespan=lifespan,

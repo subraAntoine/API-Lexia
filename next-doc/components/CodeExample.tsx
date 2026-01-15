@@ -2,25 +2,22 @@
 
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
+import config from "@/lib/config";
 
-const requestCode = `curl https://api.lexiapro.fr/v1/transcribe \\
+const getRequestCode = (apiUrl: string) => `curl ${apiUrl}/v1/transcriptions/sync \\
   -X POST \\
-  -H "Authorization: Bearer sk_live_..." \\
-  -H "Content-Type: audio/wav" \\
-  --data-binary @audio.wav`;
+  -H "Authorization: Bearer lx_your_api_key" \\
+  -H "Content-Type: multipart/form-data" \\
+  -F "audio=@audio.wav" \\
+  -F "language_code=fr"`;
 
 const responseCode = `{
-  "id": "trans_abc123xyz",
-  "status": "completed",
-  "transcript": "Hello, this is a sample...",
-  "confidence": 0.95,
-  "language": "en-US",
+  "text": "Bonjour, ceci est un exemple...",
+  "language": "fr",
   "duration": 12.5,
-  "timestamp": "2024-01-15T10:30:00Z",
-  "metadata": {
-    "model": "lexia-v1",
-    "sampling_rate": 16000
-  }
+  "segments": [...],
+  "words": [...],
+  "processing_time": 2.3
 }`;
 
 function CopyButton({ text }: { text: string }) {
@@ -43,6 +40,8 @@ function CopyButton({ text }: { text: string }) {
 }
 
 export function CodeExample() {
+    const requestCode = getRequestCode(config.apiUrl);
+    
     return (
         <section className="mx-auto max-w-6xl px-6 py-16">
             <div className="mb-8 text-center">
