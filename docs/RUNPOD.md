@@ -59,7 +59,7 @@ source venv/bin/activate
 pip install --upgrade pip wheel setuptools
 
 # Install PyTorch 2.9 (required for vLLM)
-pip install torch==2.9.0 torchvision==0.24.0 torchaudio==2.9.0
+pip install torch==2.9.0 torchvision==0.22.0 torchaudio==2.9.0
 
 # Install vLLM
 pip install vllm
@@ -114,7 +114,7 @@ CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/0
 LLM_SERVICE_URL=http://localhost:8005
 STT_SERVICE_URL=http://localhost:8002
-HF_TOKEN=hf_your_huggingface_token_here
+HF_TOKEN=hf_token
 STORAGE_BACKEND=local
 LOCAL_STORAGE_PATH=/workspace/API-Lexia/data
 USE_MOCK_LLM=false
@@ -282,7 +282,7 @@ export LLM_SERVICE_URL="http://localhost:8005"
 export STT_SERVICE_URL="http://localhost:8002"
 export STORAGE_BACKEND="local"
 export LOCAL_STORAGE_PATH="/workspace/API-Lexia/data"
-export HF_TOKEN=token
+export HF_TOKEN=hf_token
 
 
 # STT Configuration (Gilbert distilled model - 2-4x faster, optimized for French)
