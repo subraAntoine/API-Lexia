@@ -207,8 +207,8 @@ class PyannoteBackend(DiarizationBackend):
         audio_duration = librosa.get_duration(path=str(audio_path))
         audio_duration_ms = int(audio_duration * 1000)  # Convert to ms
 
-        # Compute total overlap duration
-        total_overlap = sum(o.duration for o in overlaps)
+        # Compute total overlap duration (ensure int)
+        total_overlap = int(sum(o.duration for o in overlaps))
 
         stats = DiarizationStats(
             version="1.0",
@@ -217,7 +217,7 @@ class PyannoteBackend(DiarizationBackend):
             num_speakers=len(speakers),
             num_segments=len(segments),
             num_overlaps=len(overlaps),
-            overlap_duration=total_overlap,  # Already in ms from _detect_overlaps
+            overlap_duration=total_overlap,  # In ms, as int
             processing_time=int(processing_time * 1000),  # Convert to ms
         )
 

@@ -71,7 +71,7 @@ class MockDiarizationBackend(DiarizationBackend):
             num_speakers=num_speakers,
             num_segments=len(segments),
             num_overlaps=len(overlaps),
-            overlap_duration=sum(o.duration for o in overlaps),  # In milliseconds
+            overlap_duration=int(sum(o.duration for o in overlaps)),  # In milliseconds, as int
             processing_time=int(self.response_delay * 1000),  # In milliseconds
         )
 

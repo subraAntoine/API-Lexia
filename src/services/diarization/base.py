@@ -168,7 +168,7 @@ class DiarizationBackend(ABC):
 
         speakers = {}
         for speaker_id, segs in speaker_data.items():
-            total_duration = sum(s.end - s.start for s in segs)  # Already in ms
+            total_duration = int(sum(s.end - s.start for s in segs))  # In ms, as int
             avg_duration = int(total_duration / len(segs)) if segs else 0
             percentage = (total_duration / total_all_speakers * 100) if total_all_speakers > 0 else 0
 

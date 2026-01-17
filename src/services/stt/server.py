@@ -268,7 +268,7 @@ async def transcribe(
         audio_duration = librosa.get_duration(path=str(temp_path))
 
         if USE_TRANSFORMERS:
-            # Use transformers pipeline with word timestamps
+            # Use transformers pipeline with timestamps
             pipe = model["pipeline"]
 
             # Load audio with librosa
@@ -279,44 +279,61 @@ async def transcribe(
             if language:
                 generate_kwargs["language"] = language
 
-            # Run pipeline with word-level timestamps
-            result = pipe(
-                audio_array,
-                return_timestamps="word" if word_timestamps else True,
-                generate_kwargs=generate_kwargs,
-            )
-
-            text = result["text"].strip()
-            chunks = result.get("chunks", [])
-
-            # Build segments and words from chunks
-            segments: list[TranscriptionSegment] = []
-            all_words: list[TranscriptionWord] = []
-
-            if word_timestamps and chunks:
-                # Build word list from chunks
-                for chunk in chunks:
-                    timestamp = chunk.get("timestamp", (0, 0))
-                    start_time = timestamp[0] if timestamp[0] is not None else 0
-                    end_time = timestamp[1] if timestamp[1] is not None else start_time + 0.1
-                    
-                    word_obj = TranscriptionWord(
-                        text=chunk["text"].strip(),
-                        start=start_time,
-                        end=end_time,
-                        confidence=0.9,  # Pipeline doesn't provide word confidence
-                    )
-                    all_words.append(word_obj)
-
-                # Group words into segments (split on punctuation or every ~10 words)
-                current_segment_words = []
-                segment_id = 0
+            # First, try with word timestamps
+            try:
+                result = pipe(
+                    audio_array,
+                    return_timestamps="word",
+                    generate_kwargs=generate_kwargs,
+                )
+                text = result.get("text", "").strip()
+                chunks = result.get("chunks", [])
                 
-                for word in all_words:
-                    current_segment_words.append(word)
-                    # Create new segment on sentence-ending punctuation or every 15 words
-                    if (word.text.rstrip().endswith(('.', '!', '?', '。', '？', '！')) 
-                        or len(current_segment_words) >= 15):
+                # If we got chunks with word timestamps, use them
+                if chunks and any(c.get("timestamp") for c in chunks):
+                    # Build segments and words from chunks
+                    segments: list[TranscriptionSegment] = []
+                    all_words: list[TranscriptionWord] = []
+
+                    # Build word list from chunks
+                    for chunk in chunks:
+                        chunk_text = chunk.get("text", "").strip()
+                        if not chunk_text:
+                            continue
+                        timestamp = chunk.get("timestamp", (0, 0))
+                        start_time = timestamp[0] if timestamp[0] is not None else 0
+                        end_time = timestamp[1] if timestamp[1] is not None else start_time + 0.1
+                        
+                        word_obj = TranscriptionWord(
+                            text=chunk_text,
+                            start=start_time,
+                            end=end_time,
+                            confidence=0.9,
+                        )
+                        all_words.append(word_obj)
+
+                    # Group words into segments
+                    if all_words:
+                        current_segment_words = []
+                        segment_id = 0
+                        
+                        for word in all_words:
+                            current_segment_words.append(word)
+                            if (word.text.rstrip().endswith(('.', '!', '?', '。', '？', '！')) 
+                                or len(current_segment_words) >= 15):
+                                if current_segment_words:
+                                    seg_text = " ".join(w.text for w in current_segment_words)
+                                    segments.append(TranscriptionSegment(
+                                        id=segment_id,
+                                        text=seg_text.strip(),
+                                        start=current_segment_words[0].start,
+                                        end=current_segment_words[-1].end,
+                                        confidence=0.9,
+                                        words=current_segment_words.copy(),
+                                    ))
+                                    segment_id += 1
+                                    current_segment_words = []
+                        
                         if current_segment_words:
                             seg_text = " ".join(w.text for w in current_segment_words)
                             segments.append(TranscriptionSegment(
@@ -327,22 +344,55 @@ async def transcribe(
                                 confidence=0.9,
                                 words=current_segment_words.copy(),
                             ))
-                            segment_id += 1
-                            current_segment_words = []
-                
-                # Add remaining words as final segment
-                if current_segment_words:
-                    seg_text = " ".join(w.text for w in current_segment_words)
+                        
+                        # Reconstruct text from words if original text is empty
+                        if not text and all_words:
+                            text = " ".join(w.text for w in all_words)
+                        
+                        return TranscriptionResponse(
+                            text=text,
+                            segments=segments,
+                            words=all_words,
+                            language=language or "fr",
+                            language_confidence=0.9,
+                            duration=audio_duration,
+                        )
+            except Exception as e:
+                print(f"Word timestamps failed, falling back to segment timestamps: {e}")
+
+            # Fallback: use segment-level timestamps (more compatible)
+            result = pipe(
+                audio_array,
+                return_timestamps=True,  # Segment-level timestamps
+                generate_kwargs=generate_kwargs,
+            )
+            
+            text = result.get("text", "").strip()
+            chunks = result.get("chunks", [])
+            
+            segments: list[TranscriptionSegment] = []
+            all_words: list[TranscriptionWord] = []
+            
+            if chunks:
+                for i, chunk in enumerate(chunks):
+                    chunk_text = chunk.get("text", "").strip()
+                    if not chunk_text:
+                        continue
+                    timestamp = chunk.get("timestamp", (0, audio_duration))
+                    start_time = timestamp[0] if timestamp[0] is not None else 0
+                    end_time = timestamp[1] if timestamp[1] is not None else audio_duration
+                    
                     segments.append(TranscriptionSegment(
-                        id=segment_id,
-                        text=seg_text.strip(),
-                        start=current_segment_words[0].start,
-                        end=current_segment_words[-1].end,
+                        id=i,
+                        text=chunk_text,
+                        start=start_time,
+                        end=end_time,
                         confidence=0.9,
-                        words=current_segment_words.copy(),
+                        words=None,  # No word-level timestamps in fallback mode
                     ))
-            else:
-                # No word timestamps, create single segment
+            
+            # If no chunks but we have text, create single segment
+            if not segments and text:
                 segments.append(TranscriptionSegment(
                     id=0,
                     text=text,
