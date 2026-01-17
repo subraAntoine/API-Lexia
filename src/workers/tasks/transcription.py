@@ -7,6 +7,7 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 from src.workers.celery_app import app
 
@@ -32,6 +33,116 @@ def run_async(coro):
         return loop.run_until_complete(coro)
     finally:
         loop.close()
+
+
+def _align_text_with_diarization(
+    text: str,
+    words: list[Any],
+    diar_segments: list[Any],
+) -> list[dict]:
+    """
+    Align transcription text with diarization segments.
+    
+    If word-level timestamps are available, use them for precise alignment.
+    Otherwise, distribute text proportionally across segments based on duration.
+    
+    Args:
+        text: Full transcription text
+        words: List of word objects with timestamps (may be empty)
+        diar_segments: List of diarization SpeakerSegment objects
+        
+    Returns:
+        List of utterance dicts with speaker, timestamps, and aligned text
+    """
+    if not diar_segments:
+        return []
+    
+    utterances = []
+    
+    # Sort diarization segments by start time
+    sorted_segments = sorted(diar_segments, key=lambda s: s.start)
+    
+    if words:
+        # We have word-level timestamps - use precise alignment
+        # Convert words to list of dicts with ms timestamps
+        word_list = []
+        for w in words:
+            start_ms = int(w.start * 1000) if hasattr(w, 'start') else int(w.get('start', 0) * 1000)
+            end_ms = int(w.end * 1000) if hasattr(w, 'end') else int(w.get('end', 0) * 1000)
+            word_text = w.text if hasattr(w, 'text') else w.get('text', '')
+            word_list.append({
+                'text': word_text,
+                'start': start_ms,
+                'end': end_ms,
+            })
+        
+        for seg in sorted_segments:
+            seg_start = int(seg.start)
+            seg_end = int(seg.end)
+            
+            # Find words that overlap with this segment
+            segment_words = []
+            for word in word_list:
+                # Word overlaps with segment if word_start < seg_end and word_end > seg_start
+                if word['start'] < seg_end and word['end'] > seg_start:
+                    segment_words.append(word['text'])
+            
+            utterances.append({
+                "speaker": seg.speaker,
+                "start": seg_start,
+                "end": seg_end,
+                "text": " ".join(segment_words).strip(),
+                "confidence": float(seg.confidence),
+            })
+    else:
+        # No word timestamps - distribute text proportionally by duration
+        # This is a rough approximation
+        total_duration = sum(int(s.end) - int(s.start) for s in sorted_segments)
+        
+        if total_duration > 0 and text:
+            # Split text into words
+            text_words = text.split()
+            total_words = len(text_words)
+            
+            word_index = 0
+            for seg in sorted_segments:
+                seg_start = int(seg.start)
+                seg_end = int(seg.end)
+                seg_duration = seg_end - seg_start
+                
+                # Calculate how many words this segment should get
+                proportion = seg_duration / total_duration
+                num_words = max(1, int(proportion * total_words))
+                
+                # Get words for this segment
+                segment_words = text_words[word_index:word_index + num_words]
+                word_index += num_words
+                
+                utterances.append({
+                    "speaker": seg.speaker,
+                    "start": seg_start,
+                    "end": seg_end,
+                    "text": " ".join(segment_words).strip(),
+                    "confidence": float(seg.confidence),
+                })
+            
+            # If there are remaining words, add them to the last utterance
+            if word_index < total_words and utterances:
+                remaining = " ".join(text_words[word_index:])
+                utterances[-1]["text"] += " " + remaining
+                utterances[-1]["text"] = utterances[-1]["text"].strip()
+        else:
+            # No text or duration, just create empty utterances
+            for seg in sorted_segments:
+                utterances.append({
+                    "speaker": seg.speaker,
+                    "start": int(seg.start),
+                    "end": int(seg.end),
+                    "text": "",
+                    "confidence": float(seg.confidence),
+                })
+    
+    return utterances
 
 
 @app.task(
@@ -178,25 +289,22 @@ async def _process_transcription_async(
                     # AssemblyAI format: speakers as letters (A, B, C...)
                     speakers = [s.id for s in diar_result.speakers]
                     
-                    # Build utterances from diarization (AssemblyAI format)
-                    utterances = [
-                        {
-                            "speaker": u.speaker,
-                            "start": u.start,  # Already in ms from diarization backend
-                            "end": u.end,      # Already in ms from diarization backend
-                            "text": u.text,
-                            "confidence": u.confidence,
-                        }
-                        for u in diar_result.utterances
-                    ]
+                    # Align transcription text with diarization segments
+                    # If we have word-level timestamps, use them for precise alignment
+                    # Otherwise, distribute text proportionally across utterances
+                    utterances = _align_text_with_diarization(
+                        result.text,
+                        result.words if result.words else [],
+                        diar_result.segments,
+                    )
 
                     # Diarization segments (AssemblyAI format: already in ms)
                     diar_segments = [
                         {
                             "speaker": s.speaker,
-                            "start": s.start,  # Already in ms
-                            "end": s.end,      # Already in ms
-                            "confidence": s.confidence,
+                            "start": int(s.start),  # Already in ms
+                            "end": int(s.end),      # Already in ms
+                            "confidence": float(s.confidence),
                         }
                         for s in diar_result.segments
                     ]
@@ -204,9 +312,9 @@ async def _process_transcription_async(
                     diar_stats = None
                     if diar_result.stats:
                         diar_stats = {
-                            "num_speakers": diar_result.stats.num_speakers,
-                            "num_segments": diar_result.stats.num_segments,
-                            "audio_duration": diar_result.stats.audio_duration,  # Already in ms
+                            "num_speakers": int(diar_result.stats.num_speakers),
+                            "num_segments": int(diar_result.stats.num_segments),
+                            "audio_duration": int(diar_result.stats.audio_duration),  # Already in ms
                         }
 
                     await trans_repo.set_diarization_result(
