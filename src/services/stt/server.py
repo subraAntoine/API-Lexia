@@ -125,9 +125,9 @@ def load_whisper():
     global whisper_model
     if whisper_model is None:
         if USE_TRANSFORMERS:
-            # Use transformers with direct model loading
-            from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
-            print(f"Loading Whisper model (transformers): {WHISPER_MODEL} on {DEVICE}")
+            # Use transformers pipeline with timestamps support
+            from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+            print(f"Loading Whisper model (transformers pipeline): {WHISPER_MODEL} on {DEVICE}")
 
             # Use float16 for distilled models on CUDA, float32 for CPU
             torch_dtype = torch.float16 if DEVICE == "cuda" else torch.float32
@@ -140,9 +140,21 @@ def load_whisper():
                 low_cpu_mem_usage=True,
             ).to(DEVICE)
             
-            whisper_model = {"processor": processor, "model": model}
+            # Create pipeline for transcription with timestamps
+            pipe = pipeline(
+                "automatic-speech-recognition",
+                model=model,
+                tokenizer=processor.tokenizer,
+                feature_extractor=processor.feature_extractor,
+                torch_dtype=torch_dtype,
+                device=DEVICE,
+                chunk_length_s=30,  # For long-form audio
+                batch_size=8,
+            )
+            
+            whisper_model = {"processor": processor, "model": model, "pipeline": pipe}
 
-            print(f"Whisper model loaded successfully (transformers, dtype={torch_dtype})")
+            print(f"Whisper model loaded successfully (transformers pipeline, dtype={torch_dtype})")
         else:
             # Use faster-whisper for CTranslate2 models
             from faster_whisper import WhisperModel
@@ -259,66 +271,74 @@ async def transcribe(
         audio_duration = librosa.get_duration(path=str(temp_path))
 
         if USE_TRANSFORMERS:
-            # Use transformers with direct model inference
-            processor = model["processor"]
-            whisper_model_inst = model["model"]
+            # Use transformers pipeline with timestamps
+            pipe = model["pipeline"]
 
             # Load audio with librosa
             audio_array, sr = librosa.load(str(temp_path), sr=16000)
             
             print(f"[STT] Audio loaded: duration={audio_duration:.2f}s, samples={len(audio_array)}")
 
-            # Process audio
-            inputs = processor(audio_array, sampling_rate=16000, return_tensors="pt")
-            input_features = inputs.input_features.to(DEVICE, dtype=whisper_model_inst.dtype)
-            
-            print(f"[STT] Input features shape: {input_features.shape}")
-
-            # Prepare generation config
-            forced_decoder_ids = processor.get_decoder_prompt_ids(
-                language=language if language else "fr",
-                task="transcribe"
-            )
-            
-            # Calculate max_new_tokens: model limit is 448, minus decoder prompt tokens
-            max_new_tokens = 444
-            
             try:
-                generated_ids = whisper_model_inst.generate(
-                    input_features,
-                    forced_decoder_ids=forced_decoder_ids,
-                    max_new_tokens=max_new_tokens,
+                # Run pipeline with timestamps
+                result = pipe(
+                    {"array": audio_array, "sampling_rate": 16000},
+                    return_timestamps=True,
+                    generate_kwargs={
+                        "language": language if language else "fr",
+                        "task": "transcribe",
+                    },
                 )
                 
-                # Decode transcription
-                transcription = processor.batch_decode(
-                    generated_ids,
-                    skip_special_tokens=True,
-                )
-                text = transcription[0].strip() if transcription else ""
+                text = result.get("text", "").strip()
+                chunks = result.get("chunks", [])
                 
                 print(f"[STT] Transcribed text: '{text[:100]}{'...' if len(text) > 100 else ''}' (length={len(text)})")
+                print(f"[STT] Got {len(chunks)} timestamp chunks")
                 
             except Exception as gen_error:
                 print(f"[STT] Generation error: {gen_error}")
                 import traceback
                 traceback.print_exc()
                 text = ""
+                chunks = []
 
-            # Note: This distilled model doesn't support word-level timestamps
-            # Word timestamps will be approximated during diarization alignment
+            # Build segments from chunks
             segments: list[TranscriptionSegment] = []
             all_words: list[TranscriptionWord] = []
             
-            if text:
-                segments.append(TranscriptionSegment(
-                    id=0,
-                    text=text,
-                    start=0,
-                    end=audio_duration,
-                    confidence=0.9,
-                    words=None,
-                ))
+            for i, chunk in enumerate(chunks):
+                chunk_text = chunk.get("text", "").strip()
+                timestamp = chunk.get("timestamp", (0, audio_duration))
+                start_time = timestamp[0] if timestamp[0] is not None else 0
+                end_time = timestamp[1] if timestamp[1] is not None else audio_duration
+                
+                if chunk_text:
+                    # Each chunk becomes a segment
+                    segments.append(TranscriptionSegment(
+                        id=i,
+                        text=chunk_text,
+                        start=float(start_time),
+                        end=float(end_time),
+                        confidence=0.9,
+                        words=None,
+                    ))
+                    
+                    # Also create word entries for alignment
+                    # Split chunk text into words and distribute time proportionally
+                    words_in_chunk = chunk_text.split()
+                    if words_in_chunk:
+                        chunk_duration = end_time - start_time
+                        word_duration = chunk_duration / len(words_in_chunk)
+                        for j, word in enumerate(words_in_chunk):
+                            word_start = start_time + j * word_duration
+                            word_end = word_start + word_duration
+                            all_words.append(TranscriptionWord(
+                                text=word,
+                                start=float(word_start),
+                                end=float(word_end),
+                                confidence=0.9,
+                            ))
 
             return TranscriptionResponse(
                 text=text,
