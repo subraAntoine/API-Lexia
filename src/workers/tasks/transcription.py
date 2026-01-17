@@ -19,6 +19,13 @@ def run_async(coro):
     from src.db.session import reset_db_engine
     reset_db_engine()
     
+    # Reset service backends to avoid 'Event loop is closed' errors
+    # with httpx clients that are bound to old event loops
+    from src.services.stt.factory import reset_stt_backend
+    from src.services.diarization.factory import reset_diarization_backend
+    reset_stt_backend()
+    reset_diarization_backend()
+    
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
