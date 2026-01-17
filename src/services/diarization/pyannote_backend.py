@@ -334,8 +334,6 @@ class PyannoteBackend(DiarizationBackend):
 
         return overlaps
 
-        return overlaps
-
     async def _diarize_via_service(
         self,
         audio_path: Path,
@@ -370,23 +368,89 @@ class PyannoteBackend(DiarizationBackend):
                 response.raise_for_status()
                 data = response.json()
 
-            # Parse response from STT server
+            # Parse response from STT server with explicit int conversion
+            # Note: STT server returns values in SECONDS (float), we need MILLISECONDS (int)
             from src.models.stt import Speaker, OverlapSegment, DiarizationStats
 
-            speakers = [Speaker(**s) for s in data.get("speakers", [])]
-            segments = [
-                SpeakerSegment(**s) for s in data.get("segments", [])
-            ]
-            overlaps = [
-                OverlapSegment(**o) for o in data.get("overlaps", [])
-            ]
+            # Helper to convert seconds (float) to milliseconds (int)
+            def to_ms(value, default=0):
+                """Convert seconds to milliseconds as int."""
+                if value is None:
+                    return default
+                # Value is in seconds (float), convert to milliseconds
+                return int(float(value) * 1000)
+
+            def ensure_int(value, default=0):
+                """Ensure value is int."""
+                if value is None:
+                    return default
+                return int(value)
+
+            # Parse speakers with conversion to milliseconds
+            speakers = []
+            for s in data.get("speakers", []):
+                speakers.append(Speaker(
+                    id=s.get("id", "A"),
+                    label=s.get("label"),
+                    total_duration=to_ms(s.get("total_duration", 0)),  # seconds → ms
+                    num_segments=ensure_int(s.get("num_segments", 0)),
+                    percentage=float(s.get("percentage", 0.0)),
+                    avg_segment_duration=to_ms(s.get("avg_segment_duration", 0)),  # seconds → ms
+                ))
+
+            # Parse segments with conversion to milliseconds
+            segments = []
+            for seg in data.get("segments", []):
+                segments.append(SpeakerSegment(
+                    speaker=seg.get("speaker", "A"),
+                    start=to_ms(seg.get("start", 0)),   # seconds → ms
+                    end=to_ms(seg.get("end", 0)),       # seconds → ms
+                    confidence=float(seg.get("confidence", 1.0)),
+                ))
+
+            # Parse overlaps with conversion to milliseconds
+            overlaps = []
+            for o in data.get("overlaps", []):
+                start_ms = to_ms(o.get("start", 0))
+                end_ms = to_ms(o.get("end", 0))
+                overlaps.append(OverlapSegment(
+                    speakers=o.get("speakers", []),
+                    start=start_ms,
+                    end=end_ms,
+                    duration=end_ms - start_ms,  # Recalculate duration in ms
+                ))
+
             stats = None
             if data.get("stats"):
-                stats = DiarizationStats(**data["stats"])
+                stats_data = data["stats"]
+                stats = DiarizationStats(
+                    version=stats_data.get("version", "1.0"),
+                    model=stats_data.get("model", "unknown"),
+                    audio_duration=to_ms(stats_data.get("audio_duration", 0)),    # seconds → ms
+                    num_speakers=ensure_int(stats_data.get("num_speakers", 0)),
+                    num_segments=ensure_int(stats_data.get("num_segments", 0)),
+                    num_overlaps=ensure_int(stats_data.get("num_overlaps", 0)),
+                    overlap_duration=to_ms(stats_data.get("overlap_duration", 0)),  # seconds → ms
+                    processing_time=to_ms(stats_data.get("processing_time")),       # seconds → ms
+                )
+
+            # Create utterances from segments (for diarization-only, text is empty)
+            from src.models.stt import Utterance
+            utterances = [
+                Utterance(
+                    speaker=seg.speaker,
+                    start=seg.start,
+                    end=seg.end,
+                    text="",  # No transcription in diarization-only mode
+                    confidence=seg.confidence,
+                )
+                for seg in segments
+            ]
 
             return DiarizationResult(
                 speakers=speakers,
                 segments=segments,
+                utterances=utterances,
                 overlaps=overlaps,
                 stats=stats,
                 rttm=data.get("rttm"),
