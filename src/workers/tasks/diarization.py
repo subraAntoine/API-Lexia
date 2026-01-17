@@ -118,15 +118,15 @@ async def _process_diarization_async(
 
                 await job_repo.update_progress(job_uuid, 90, "Finalizing")
 
-                # Prepare result (AssemblyAI format)
+                # Prepare result (AssemblyAI format) - ensure all durations are int milliseconds
                 speakers = [
                     {
                         "id": s.id,
                         "label": s.label,
-                        "total_duration": s.total_duration,  # In milliseconds
-                        "num_segments": s.num_segments,
-                        "percentage": s.percentage if hasattr(s, 'percentage') else 0.0,
-                        "avg_segment_duration": s.avg_segment_duration if hasattr(s, 'avg_segment_duration') else 0,
+                        "total_duration": int(s.total_duration),  # In milliseconds as int
+                        "num_segments": int(s.num_segments),
+                        "percentage": float(s.percentage) if hasattr(s, 'percentage') else 0.0,
+                        "avg_segment_duration": int(s.avg_segment_duration) if hasattr(s, 'avg_segment_duration') else 0,
                     }
                     for s in result.speakers
                 ]
@@ -134,9 +134,9 @@ async def _process_diarization_async(
                 segments = [
                     {
                         "speaker": s.speaker,
-                        "start": s.start,  # In milliseconds
-                        "end": s.end,      # In milliseconds
-                        "confidence": s.confidence,
+                        "start": int(s.start),   # In milliseconds as int
+                        "end": int(s.end),       # In milliseconds as int
+                        "confidence": float(s.confidence),
                     }
                     for s in result.segments
                 ]
@@ -145,10 +145,10 @@ async def _process_diarization_async(
                 utterances = [
                     {
                         "speaker": u.speaker,
-                        "start": u.start,  # In milliseconds
-                        "end": u.end,      # In milliseconds
+                        "start": int(u.start),   # In milliseconds as int
+                        "end": int(u.end),       # In milliseconds as int
                         "text": u.text,
-                        "confidence": u.confidence,
+                        "confidence": float(u.confidence),
                     }
                     for u in result.utterances
                 ]
@@ -158,12 +158,12 @@ async def _process_diarization_async(
                     stats = {
                         "version": result.stats.version,
                         "model": result.stats.model,
-                        "num_speakers": result.stats.num_speakers,
-                        "num_segments": result.stats.num_segments,
-                        "num_overlaps": result.stats.num_overlaps,
-                        "overlap_duration": result.stats.overlap_duration,  # In milliseconds
-                        "audio_duration": result.stats.audio_duration,      # In milliseconds
-                        "processing_time": result.stats.processing_time,    # In milliseconds
+                        "num_speakers": int(result.stats.num_speakers),
+                        "num_segments": int(result.stats.num_segments),
+                        "num_overlaps": int(result.stats.num_overlaps),
+                        "overlap_duration": int(result.stats.overlap_duration),  # In ms as int
+                        "audio_duration": int(result.stats.audio_duration),      # In ms as int
+                        "processing_time": int(result.stats.processing_time) if result.stats.processing_time else 0,
                     }
 
                 job_result = {

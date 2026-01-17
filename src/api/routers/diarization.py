@@ -342,19 +342,65 @@ async def get_diarization(
     if job.result:
         from src.models.stt import Speaker, SpeakerSegment, Utterance
 
-        response.speakers = [
-            Speaker(**s) for s in job.result.get("speakers", [])
-        ]
-        response.segments = [
-            SpeakerSegment(**s) for s in job.result.get("segments", [])
-        ]
-        # AssemblyAI format: utterances
-        response.utterances = [
-            Utterance(**u) for u in job.result.get("utterances", [])
-        ]
+        # Helper to ensure int values for millisecond fields
+        def ensure_int_ms(value):
+            """Convert to int, handling both seconds (float) and milliseconds (int)."""
+            if value is None:
+                return 0
+            # If it looks like seconds (small float), convert to ms
+            if isinstance(value, float) and value < 1000:
+                return int(value * 1000)
+            return int(value)
+
+        # Parse speakers with int conversion
+        speakers_data = job.result.get("speakers", [])
+        response.speakers = []
+        for s in speakers_data:
+            response.speakers.append(Speaker(
+                id=s.get("id", "A"),
+                label=s.get("label"),
+                total_duration=ensure_int_ms(s.get("total_duration", 0)),
+                num_segments=int(s.get("num_segments", 0)),
+                percentage=float(s.get("percentage", 0.0)),
+                avg_segment_duration=ensure_int_ms(s.get("avg_segment_duration", 0)),
+            ))
+
+        # Parse segments with int conversion
+        segments_data = job.result.get("segments", [])
+        response.segments = []
+        for s in segments_data:
+            response.segments.append(SpeakerSegment(
+                speaker=s.get("speaker", "A"),
+                start=ensure_int_ms(s.get("start", 0)),
+                end=ensure_int_ms(s.get("end", 0)),
+                confidence=float(s.get("confidence", 1.0)),
+            ))
+
+        # Parse utterances with int conversion
+        utterances_data = job.result.get("utterances", [])
+        response.utterances = []
+        for u in utterances_data:
+            response.utterances.append(Utterance(
+                speaker=u.get("speaker", "A"),
+                start=ensure_int_ms(u.get("start", 0)),
+                end=ensure_int_ms(u.get("end", 0)),
+                text=u.get("text", ""),
+                confidence=float(u.get("confidence", 1.0)),
+            ))
+
         if job.result.get("stats"):
-            response.stats = DiarizationStats(**job.result["stats"])
-            response.audio_duration = job.result["stats"].get("audio_duration")
+            stats_data = job.result["stats"]
+            response.stats = DiarizationStats(
+                version=stats_data.get("version", "1.0"),
+                model=stats_data.get("model", "unknown"),
+                audio_duration=ensure_int_ms(stats_data.get("audio_duration", 0)),
+                num_speakers=int(stats_data.get("num_speakers", 0)),
+                num_segments=int(stats_data.get("num_segments", 0)),
+                num_overlaps=int(stats_data.get("num_overlaps", 0)),
+                overlap_duration=ensure_int_ms(stats_data.get("overlap_duration", 0)),
+                processing_time=ensure_int_ms(stats_data.get("processing_time")),
+            )
+            response.audio_duration = response.stats.audio_duration
         response.rttm = job.result.get("rttm")
 
     if job.error_message:
