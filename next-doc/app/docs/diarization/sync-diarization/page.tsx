@@ -40,7 +40,7 @@ export default function SyncDiarizationPage() {
                         <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-500">Endpoint</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <code className="text-sm font-mono text-slate-900">/v1/diarization/sync</code>
+                        <code className="text-sm font-mono text-slate-900">POST /v1/diarization/sync</code>
                     </CardContent>
                 </Card>
 
@@ -53,20 +53,20 @@ export default function SyncDiarizationPage() {
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">audio</span>
                                 <span className="text-sm text-red-500 font-medium">Required</span>
-                                <span className="text-sm text-slate-600">Audio file to diarize</span>
+                                <span className="text-sm text-slate-600">Audio file to diarize (wav, mp3, m4a, flac, ogg, webm)</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
-                                <span className="font-mono text-sm font-medium text-slate-900">num_speakers</span>
+                                <span className="font-mono text-sm font-medium text-slate-900">speakers_expected</span>
                                 <span className="text-sm text-slate-500">integer</span>
                                 <span className="text-sm text-slate-600">Exact number of speakers if known (1-20)</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
-                                <span className="font-mono text-sm font-medium text-slate-900">min_speakers</span>
+                                <span className="font-mono text-sm font-medium text-slate-900">min_speakers_expected</span>
                                 <span className="text-sm text-slate-500">integer</span>
                                 <span className="text-sm text-slate-600">Minimum number of speakers (≥1)</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4">
-                                <span className="font-mono text-sm font-medium text-slate-900">max_speakers</span>
+                                <span className="font-mono text-sm font-medium text-slate-900">max_speakers_expected</span>
                                 <span className="text-sm text-slate-500">integer</span>
                                 <span className="text-sm text-slate-600">Maximum number of speakers (≤20)</span>
                             </div>
@@ -83,7 +83,7 @@ export default function SyncDiarizationPage() {
                             {`curl -X POST https://api.lexia.pro/v1/diarization/sync \\
   -H "Authorization: Bearer lx_abc123..." \\
   -F "audio=@short_meeting.mp3" \\
-  -F "num_speakers=2"`}
+  -F "speakers_expected=2"`}
                         </pre>
                     </CardContent>
                 </Card>
@@ -100,39 +100,58 @@ export default function SyncDiarizationPage() {
   "status": "completed",
   "created_at": "2026-01-14T10:00:00Z",
   "completed_at": "2026-01-14T10:00:15Z",
-  "speakers": [
+  "audio_duration": 45000,
+  "utterances": [
     {
-      "id": "SPEAKER_00",
-      "label": null,
-      "total_duration": 25.3,
-      "num_segments": 5,
-      "avg_segment_duration": 5.06
+      "speaker": "A",
+      "start": 0,
+      "end": 5200,
+      "text": "Bonjour, comment ça va ?",
+      "confidence": 0.95
     },
     {
-      "id": "SPEAKER_01",
+      "speaker": "B",
+      "start": 5500,
+      "end": 10800,
+      "text": "Très bien, merci !",
+      "confidence": 0.92
+    }
+  ],
+  "speakers": [
+    {
+      "id": "A",
       "label": null,
-      "total_duration": 18.7,
+      "total_duration": 25300,
+      "num_segments": 5,
+      "percentage": 56.2,
+      "avg_segment_duration": 5060
+    },
+    {
+      "id": "B",
+      "label": null,
+      "total_duration": 18700,
       "num_segments": 4,
-      "avg_segment_duration": 4.68
+      "percentage": 41.6,
+      "avg_segment_duration": 4675
     }
   ],
   "segments": [
     {
-      "speaker": "SPEAKER_00",
-      "start": 0.0,
-      "end": 5.2,
+      "speaker": "A",
+      "start": 0,
+      "end": 5200,
       "confidence": 0.95
     },
     {
-      "speaker": "SPEAKER_01",
-      "start": 5.5,
-      "end": 10.8,
+      "speaker": "B",
+      "start": 5500,
+      "end": 10800,
       "confidence": 0.92
     },
     {
-      "speaker": "SPEAKER_00",
-      "start": 11.0,
-      "end": 18.5,
+      "speaker": "A",
+      "start": 11000,
+      "end": 18500,
       "confidence": 0.97
     }
   ],
@@ -140,12 +159,12 @@ export default function SyncDiarizationPage() {
   "stats": {
     "version": "1.0",
     "model": "pyannote/speaker-diarization-3.1",
-    "audio_duration": 45.0,
+    "audio_duration": 45000,
     "num_speakers": 2,
     "num_segments": 9,
     "num_overlaps": 0,
-    "overlap_duration": 0.0,
-    "processing_time": 12.5
+    "overlap_duration": 0,
+    "processing_time": 12500
   },
   "rttm": null,
   "error": null

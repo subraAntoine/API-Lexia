@@ -24,7 +24,7 @@ export default function GetDiarizationPage() {
                         <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-500">Endpoint</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <code className="text-sm font-mono text-slate-900">/v1/diarization/{"{job_id}"}</code>
+                        <code className="text-sm font-mono text-slate-900">GET /v1/diarization/{"{job_id}"}</code>
                     </CardContent>
                 </Card>
 
@@ -90,60 +90,78 @@ export default function GetDiarizationPage() {
   "status": "completed",
   "created_at": "2026-01-14T10:00:00Z",
   "completed_at": "2026-01-14T10:01:45Z",
-  "audio_duration": 180.5,
-  "speakers": [
+  "audio_duration": 180500,
+  "utterances": [
     {
-      "id": "SPEAKER_00",
-      "label": null,
-      "total_duration": 95.3,
-      "num_segments": 12,
-      "avg_segment_duration": 7.94
+      "speaker": "A",
+      "start": 0,
+      "end": 5200,
+      "text": "Bonjour, comment ça va ?",
+      "confidence": 0.95
     },
     {
-      "id": "SPEAKER_01",
+      "speaker": "B",
+      "start": 5500,
+      "end": 12800,
+      "text": "Très bien, merci. Et vous ?",
+      "confidence": 0.92
+    }
+  ],
+  "speakers": [
+    {
+      "id": "A",
       "label": null,
-      "total_duration": 75.2,
+      "total_duration": 95300,
+      "num_segments": 12,
+      "percentage": 52.8,
+      "avg_segment_duration": 7942
+    },
+    {
+      "id": "B",
+      "label": null,
+      "total_duration": 75200,
       "num_segments": 10,
-      "avg_segment_duration": 7.52
+      "percentage": 41.7,
+      "avg_segment_duration": 7520
     }
   ],
   "segments": [
     {
-      "speaker": "SPEAKER_00",
-      "start": 0.0,
-      "end": 5.2,
+      "speaker": "A",
+      "start": 0,
+      "end": 5200,
       "confidence": 0.95
     },
     {
-      "speaker": "SPEAKER_01",
-      "start": 5.5,
-      "end": 12.8,
+      "speaker": "B",
+      "start": 5500,
+      "end": 12800,
       "confidence": 0.92
     },
     {
-      "speaker": "SPEAKER_00",
-      "start": 13.0,
-      "end": 20.5,
+      "speaker": "A",
+      "start": 13000,
+      "end": 20500,
       "confidence": 0.97
     }
   ],
   "overlaps": [
     {
-      "speakers": ["SPEAKER_00", "SPEAKER_01"],
-      "start": 45.2,
-      "end": 46.1,
-      "duration": 0.9
+      "speakers": ["A", "B"],
+      "start": 45200,
+      "end": 46100,
+      "duration": 900
     }
   ],
   "stats": {
     "version": "1.0",
     "model": "pyannote/speaker-diarization-3.1",
-    "audio_duration": 180.5,
+    "audio_duration": 180500,
     "num_speakers": 2,
     "num_segments": 22,
     "num_overlaps": 1,
-    "overlap_duration": 0.9,
-    "processing_time": 45.2
+    "overlap_duration": 900,
+    "processing_time": 45200
   },
   "rttm": null,
   "error": null
@@ -159,6 +177,16 @@ export default function GetDiarizationPage() {
                     <CardContent>
                         <div className="space-y-4">
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">audio_duration</span>
+                                <span className="text-sm text-slate-500">integer</span>
+                                <span className="text-sm text-slate-600">Audio duration in milliseconds</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">utterances</span>
+                                <span className="text-sm text-slate-500">array</span>
+                                <span className="text-sm text-slate-600">Speaker-attributed speech with transcript text</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">speakers</span>
                                 <span className="text-sm text-slate-500">array</span>
                                 <span className="text-sm text-slate-600">List of detected speakers with statistics</span>
@@ -166,7 +194,7 @@ export default function GetDiarizationPage() {
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">segments</span>
                                 <span className="text-sm text-slate-500">array</span>
-                                <span className="text-sm text-slate-600">Timeline of who spoke when (start/end times)</span>
+                                <span className="text-sm text-slate-600">Timeline of who spoke when (start/end in ms)</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">overlaps</span>
@@ -201,7 +229,7 @@ export default function GetDiarizationPage() {
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">id</span>
                                 <span className="text-sm text-slate-500">string</span>
-                                <span className="text-sm text-slate-600">Speaker identifier (e.g., &quot;SPEAKER_00&quot;)</span>
+                                <span className="text-sm text-slate-600">Speaker identifier (A, B, C, etc.)</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">label</span>
@@ -210,18 +238,58 @@ export default function GetDiarizationPage() {
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">total_duration</span>
-                                <span className="text-sm text-slate-500">float</span>
-                                <span className="text-sm text-slate-600">Total speaking time in seconds</span>
+                                <span className="text-sm text-slate-500">integer</span>
+                                <span className="text-sm text-slate-600">Total speaking time in milliseconds</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">num_segments</span>
                                 <span className="text-sm text-slate-500">integer</span>
                                 <span className="text-sm text-slate-600">Number of speech segments</span>
                             </div>
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">percentage</span>
+                                <span className="text-sm text-slate-500">float</span>
+                                <span className="text-sm text-slate-600">Percentage of total speaking time</span>
+                            </div>
                             <div className="grid grid-cols-3 gap-4">
                                 <span className="font-mono text-sm font-medium text-slate-900">avg_segment_duration</span>
+                                <span className="text-sm text-slate-500">integer</span>
+                                <span className="text-sm text-slate-600">Average segment duration in milliseconds</span>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="border-slate-200 shadow-sm">
+                    <CardHeader>
+                        <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-500">Utterance Object</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">speaker</span>
+                                <span className="text-sm text-slate-500">string</span>
+                                <span className="text-sm text-slate-600">Speaker identifier (A, B, C, etc.)</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">start</span>
+                                <span className="text-sm text-slate-500">integer</span>
+                                <span className="text-sm text-slate-600">Start time in milliseconds</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">end</span>
+                                <span className="text-sm text-slate-500">integer</span>
+                                <span className="text-sm text-slate-600">End time in milliseconds</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">text</span>
+                                <span className="text-sm text-slate-500">string</span>
+                                <span className="text-sm text-slate-600">Transcribed text of the utterance</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4">
+                                <span className="font-mono text-sm font-medium text-slate-900">confidence</span>
                                 <span className="text-sm text-slate-500">float</span>
-                                <span className="text-sm text-slate-600">Average segment duration in seconds</span>
+                                <span className="text-sm text-slate-600">Confidence score (0-1)</span>
                             </div>
                         </div>
                     </CardContent>
@@ -240,18 +308,36 @@ export default function GetDiarizationPage() {
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">start</span>
-                                <span className="text-sm text-slate-500">float</span>
-                                <span className="text-sm text-slate-600">Start time in seconds</span>
+                                <span className="text-sm text-slate-500">integer</span>
+                                <span className="text-sm text-slate-600">Start time in milliseconds</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">end</span>
-                                <span className="text-sm text-slate-500">float</span>
-                                <span className="text-sm text-slate-600">End time in seconds</span>
+                                <span className="text-sm text-slate-500">integer</span>
+                                <span className="text-sm text-slate-600">End time in milliseconds</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4">
                                 <span className="font-mono text-sm font-medium text-slate-900">confidence</span>
                                 <span className="text-sm text-slate-500">float</span>
                                 <span className="text-sm text-slate-600">Confidence score (0-1)</span>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="border-slate-200 shadow-sm">
+                    <CardHeader>
+                        <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-500">Error Responses</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">400</span>
+                                <span className="text-sm text-slate-600">Invalid job ID format</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <span className="font-mono text-sm font-medium text-slate-900">404</span>
+                                <span className="text-sm text-slate-600">Diarization job not found</span>
                             </div>
                         </div>
                     </CardContent>

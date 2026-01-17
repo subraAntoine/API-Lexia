@@ -22,6 +22,29 @@ from pydantic import BaseModel
 
 
 # -----------------------------------------------------------------------------
+# Speaker ID conversion
+# -----------------------------------------------------------------------------
+def speaker_index_to_letter(index: int) -> str:
+    """Convert speaker index (0, 1, 2...) to letter (A, B, C...)."""
+    if index < 26:
+        return chr(ord('A') + index)
+    # For > 26 speakers: AA, AB, etc.
+    return chr(ord('A') + index // 26 - 1) + chr(ord('A') + index % 26)
+
+
+def speaker_id_to_letter(speaker_id: str) -> str:
+    """Convert speaker ID (SPEAKER_00, SPEAKER_01...) to letter (A, B, C...)."""
+    try:
+        # Extract number from SPEAKER_XX format
+        if speaker_id.startswith("SPEAKER_"):
+            index = int(speaker_id.split("_")[1])
+            return speaker_index_to_letter(index)
+        return speaker_id
+    except (ValueError, IndexError):
+        return speaker_id
+
+
+# -----------------------------------------------------------------------------
 # Configuration from environment
 # -----------------------------------------------------------------------------
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "Gilbert-AI/gilbert-whisper-distil-fr-v0.2")
@@ -462,14 +485,20 @@ async def diarize(
             diarization = diarization_output
         
         segments: list[SpeakerSegment] = []
+        speaker_mapping: dict[str, str] = {}
         
         # Now use itertracks on the Annotation object
         for turn, _, speaker in diarization.itertracks(yield_label=True):
             duration = turn.end - turn.start
             if duration >= min_segment_duration:
+                # Map speaker to letter format (SPEAKER_00 -> A, SPEAKER_01 -> B, etc.)
+                if speaker not in speaker_mapping:
+                    speaker_mapping[speaker] = speaker_id_to_letter(speaker)
+                speaker_letter = speaker_mapping[speaker]
+                
                 segments.append(
                     SpeakerSegment(
-                        speaker=speaker,
+                        speaker=speaker_letter,
                         start=turn.start,
                         end=turn.end,
                         confidence=1.0,
@@ -480,8 +509,8 @@ async def diarize(
         if merge_gaps > 0:
             segments = _merge_gaps(segments, merge_gaps)
 
-        # Detect overlaps
-        overlaps = _detect_overlaps(diarization)
+        # Detect overlaps (with speaker mapping)
+        overlaps = _detect_overlaps(diarization, speaker_mapping)
 
         # Compute speaker stats
         speaker_stats = _compute_speaker_stats(segments)
@@ -549,13 +578,20 @@ def _merge_gaps(segments: list[SpeakerSegment], max_gap: float) -> list[SpeakerS
     return merged
 
 
-def _detect_overlaps(diarization) -> list[OverlapSegment]:
+def _detect_overlaps(diarization, speaker_mapping: dict[str, str] | None = None) -> list[OverlapSegment]:
     """Detect overlapping speech segments."""
     overlaps: list[OverlapSegment] = []
     
     # Handle pyannote 4.x DiarizeOutput - extract Annotation first
     if hasattr(diarization, 'speaker_diarization'):
         diarization = diarization.speaker_diarization
+    
+    # Build mapping if not provided
+    if speaker_mapping is None:
+        speaker_mapping = {}
+        for _, _, spk in diarization.itertracks(yield_label=True):
+            if spk not in speaker_mapping:
+                speaker_mapping[spk] = speaker_id_to_letter(spk)
     
     turns = list(diarization.itertracks(yield_label=True))
 
@@ -568,9 +604,10 @@ def _detect_overlaps(diarization) -> list[OverlapSegment]:
             overlap_end = min(turn1.end, turn2.end)
 
             if overlap_start < overlap_end:
+                # Use letter format for speakers
                 overlaps.append(
                     OverlapSegment(
-                        speakers=[speaker1, speaker2],
+                        speakers=[speaker_mapping.get(speaker1, speaker1), speaker_mapping.get(speaker2, speaker2)],
                         start=overlap_start,
                         end=overlap_end,
                         duration=overlap_end - overlap_start,

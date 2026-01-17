@@ -24,7 +24,7 @@ export default function CreateTranscriptionPage() {
                         <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-500">Endpoint</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <code className="text-sm font-mono text-slate-900">/v1/transcriptions</code>
+                        <code className="text-sm font-mono text-slate-900">POST /v1/transcriptions</code>
                     </CardContent>
                 </Card>
 
@@ -36,32 +36,47 @@ export default function CreateTranscriptionPage() {
                         <div className="space-y-4">
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">audio</span>
-                                <span className="text-sm text-slate-500">File (optional)</span>
-                                <span className="text-sm text-slate-600">Audio file to transcribe (wav, mp3, m4a, flac, ogg, webm)</span>
+                                <span className="text-sm text-slate-500">file</span>
+                                <span className="text-sm text-slate-600">Audio file to transcribe (required if no audio_url)</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">audio_url</span>
-                                <span className="text-sm text-slate-500">String (optional)</span>
-                                <span className="text-sm text-slate-600">URL to audio file (alternative to file upload)</span>
+                                <span className="text-sm text-slate-500">string</span>
+                                <span className="text-sm text-slate-600">URL to audio file (required if no audio)</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">language_code</span>
-                                <span className="text-sm text-slate-500">String</span>
+                                <span className="text-sm text-slate-500">string</span>
                                 <span className="text-sm text-slate-600">Language code: fr, en, de, es, it, pt, nl, auto. Default: fr</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
-                                <span className="font-mono text-sm font-medium text-slate-900">speaker_diarization</span>
-                                <span className="text-sm text-slate-500">Boolean</span>
-                                <span className="text-sm text-slate-600">Enable speaker detection. Default: false</span>
+                                <span className="font-mono text-sm font-medium text-slate-900">language_detection</span>
+                                <span className="text-sm text-slate-500">boolean</span>
+                                <span className="text-sm text-slate-600">Enable automatic language detection. Default: false</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
-                                <span className="font-mono text-sm font-medium text-slate-900">word_timestamps</span>
-                                <span className="text-sm text-slate-500">Boolean</span>
-                                <span className="text-sm text-slate-600">Include word-level timestamps. Default: true</span>
+                                <span className="font-mono text-sm font-medium text-slate-900">punctuate</span>
+                                <span className="text-sm text-slate-500">boolean</span>
+                                <span className="text-sm text-slate-600">Enable automatic punctuation. Default: true</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">format_text</span>
+                                <span className="text-sm text-slate-500">boolean</span>
+                                <span className="text-sm text-slate-600">Enable text formatting (capitalize, etc.). Default: true</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">speaker_labels</span>
+                                <span className="text-sm text-slate-500">boolean</span>
+                                <span className="text-sm text-slate-600">Enable speaker diarization. Default: false</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">speakers_expected</span>
+                                <span className="text-sm text-slate-500">integer</span>
+                                <span className="text-sm text-slate-600">Exact number of speakers if known (1-20)</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4">
                                 <span className="font-mono text-sm font-medium text-slate-900">webhook_url</span>
-                                <span className="text-sm text-slate-500">String (optional)</span>
+                                <span className="text-sm text-slate-500">string</span>
                                 <span className="text-sm text-slate-600">URL to call when transcription completes</span>
                             </div>
                         </div>
@@ -71,7 +86,7 @@ export default function CreateTranscriptionPage() {
                 <Card className="border-indigo-200 bg-indigo-50/50 shadow-sm">
                     <CardContent className="pt-6">
                         <p className="text-sm text-indigo-700">
-                            <strong>Note:</strong> Either <code className="bg-indigo-100 px-1 py-0.5 rounded text-xs font-mono">audio</code> file or <code className="bg-indigo-100 px-1 py-0.5 rounded text-xs font-mono">audio_url</code> must be provided.
+                            <strong>Note:</strong> Either <code className="bg-indigo-100 px-1 py-0.5 rounded text-xs font-mono">audio</code> file or <code className="bg-indigo-100 px-1 py-0.5 rounded text-xs font-mono">audio_url</code> must be provided. Word timestamps are always enabled.
                         </p>
                     </CardContent>
                 </Card>
@@ -105,8 +120,7 @@ export default function CreateTranscriptionPage() {
   -H "Authorization: Bearer lx_abc123..." \\
   -F "audio=@recording.mp3" \\
   -F "language_code=fr" \\
-  -F "speaker_diarization=true" \\
-  -F "word_timestamps=true"`}
+  -F "speaker_labels=true"`}
                             </pre>
                         </CardContent>
                     </Card>
@@ -141,6 +155,28 @@ export default function CreateTranscriptionPage() {
                             <Badge variant="outline">FLAC</Badge>
                             <Badge variant="outline">OGG</Badge>
                             <Badge variant="outline">WebM</Badge>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="border-slate-200 shadow-sm">
+                    <CardHeader>
+                        <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-500">Error Responses</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">400</span>
+                                <span className="text-sm text-slate-600">Invalid audio format or missing input</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">413</span>
+                                <span className="text-sm text-slate-600">File too large</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <span className="font-mono text-sm font-medium text-slate-900">422</span>
+                                <span className="text-sm text-slate-600">Validation error</span>
+                            </div>
                         </div>
                     </CardContent>
                 </Card>

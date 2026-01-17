@@ -24,7 +24,7 @@ export default function GetTranscriptionPage() {
                         <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-500">Endpoint</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <code className="text-sm font-mono text-slate-900">/v1/transcriptions/{"{transcription_id}"}</code>
+                        <code className="text-sm font-mono text-slate-900">GET /v1/transcriptions/{"{transcription_id}"}</code>
                     </CardContent>
                 </Card>
 
@@ -91,42 +91,36 @@ export default function GetTranscriptionPage() {
   "created_at": "2026-01-14T10:00:00Z",
   "completed_at": "2026-01-14T10:01:30Z",
   "audio_url": null,
-  "audio_duration": 125.5,
+  "audio_duration": 125500,
   "text": "Bonjour, bienvenue dans cette réunion...",
+  "confidence": 0.96,
   "language_code": "fr",
+  "language_detection": false,
   "language_confidence": 0.98,
-  "segments": [
-    {
-      "id": 0,
-      "text": "Bonjour, bienvenue dans cette réunion.",
-      "start": 0.0,
-      "end": 2.5,
-      "confidence": 0.95,
-      "speaker": "SPEAKER_00"
-    }
-  ],
+  "punctuate": true,
+  "format_text": true,
+  "speaker_labels": true,
   "words": [
     {
       "text": "Bonjour",
-      "start": 0.0,
-      "end": 0.5,
+      "start": 0,
+      "end": 500,
       "confidence": 0.98,
-      "speaker": "SPEAKER_00"
+      "speaker": "A"
     },
     {
       "text": "bienvenue",
-      "start": 0.6,
-      "end": 1.1,
+      "start": 600,
+      "end": 1100,
       "confidence": 0.96,
-      "speaker": "SPEAKER_00"
+      "speaker": "A"
     }
   ],
-  "speakers": ["SPEAKER_00", "SPEAKER_01"],
   "utterances": [
     {
-      "speaker": "SPEAKER_00",
-      "start": 0.0,
-      "end": 2.5,
+      "speaker": "A",
+      "start": 0,
+      "end": 2500,
       "text": "Bonjour, bienvenue dans cette réunion.",
       "confidence": 0.95
     }
@@ -151,33 +145,73 @@ export default function GetTranscriptionPage() {
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">audio_duration</span>
-                                <span className="text-sm text-slate-500">float</span>
-                                <span className="text-sm text-slate-600">Audio duration in seconds</span>
+                                <span className="text-sm text-slate-500">integer</span>
+                                <span className="text-sm text-slate-600">Audio duration in milliseconds</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
-                                <span className="font-mono text-sm font-medium text-slate-900">segments</span>
-                                <span className="text-sm text-slate-500">array</span>
-                                <span className="text-sm text-slate-600">Transcript broken into segments with timing</span>
+                                <span className="font-mono text-sm font-medium text-slate-900">confidence</span>
+                                <span className="text-sm text-slate-500">float</span>
+                                <span className="text-sm text-slate-600">Overall transcript confidence (0-1)</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">language_code</span>
+                                <span className="text-sm text-slate-500">string</span>
+                                <span className="text-sm text-slate-600">Detected or specified language code</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">language_confidence</span>
+                                <span className="text-sm text-slate-500">float</span>
+                                <span className="text-sm text-slate-600">Language detection confidence (0-1)</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">words</span>
                                 <span className="text-sm text-slate-500">array</span>
-                                <span className="text-sm text-slate-600">Word-level timestamps (if enabled)</span>
-                            </div>
-                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
-                                <span className="font-mono text-sm font-medium text-slate-900">speakers</span>
-                                <span className="text-sm text-slate-500">array</span>
-                                <span className="text-sm text-slate-600">List of detected speaker IDs (if diarization enabled)</span>
+                                <span className="text-sm text-slate-600">Word-level timestamps in milliseconds</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">utterances</span>
                                 <span className="text-sm text-slate-500">array</span>
-                                <span className="text-sm text-slate-600">Speaker-attributed speech segments</span>
+                                <span className="text-sm text-slate-600">Speaker-attributed speech segments (if speaker_labels enabled)</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4">
                                 <span className="font-mono text-sm font-medium text-slate-900">error</span>
                                 <span className="text-sm text-slate-500">string | null</span>
                                 <span className="text-sm text-slate-600">Error message if status is &quot;error&quot;</span>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="border-slate-200 shadow-sm">
+                    <CardHeader>
+                        <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-500">Word Object</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">text</span>
+                                <span className="text-sm text-slate-500">string</span>
+                                <span className="text-sm text-slate-600">The transcribed word</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">start</span>
+                                <span className="text-sm text-slate-500">integer</span>
+                                <span className="text-sm text-slate-600">Start time in milliseconds</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">end</span>
+                                <span className="text-sm text-slate-500">integer</span>
+                                <span className="text-sm text-slate-600">End time in milliseconds</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">confidence</span>
+                                <span className="text-sm text-slate-500">float</span>
+                                <span className="text-sm text-slate-600">Confidence score (0-1)</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4">
+                                <span className="font-mono text-sm font-medium text-slate-900">speaker</span>
+                                <span className="text-sm text-slate-500">string | null</span>
+                                <span className="text-sm text-slate-600">Speaker label (A, B, C, etc.) if speaker_labels enabled</span>
                             </div>
                         </div>
                     </CardContent>
@@ -212,6 +246,24 @@ export default function GetTranscriptionPage() {
   throw new Error('Timeout waiting for transcription');
 }`}
                         </pre>
+                    </CardContent>
+                </Card>
+
+                <Card className="border-slate-200 shadow-sm">
+                    <CardHeader>
+                        <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-500">Error Responses</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4 border-b border-slate-100 pb-2">
+                                <span className="font-mono text-sm font-medium text-slate-900">400</span>
+                                <span className="text-sm text-slate-600">Invalid transcription ID format</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <span className="font-mono text-sm font-medium text-slate-900">404</span>
+                                <span className="text-sm text-slate-600">Transcription not found</span>
+                            </div>
+                        </div>
                     </CardContent>
                 </Card>
             </div>

@@ -40,7 +40,7 @@ export default function CreateDiarizationPage() {
                         <CardTitle className="text-sm font-medium uppercase tracking-wider text-slate-500">Endpoint</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <code className="text-sm font-mono text-slate-900">/v1/diarization</code>
+                        <code className="text-sm font-mono text-slate-900">POST /v1/diarization</code>
                     </CardContent>
                 </Card>
 
@@ -61,17 +61,17 @@ export default function CreateDiarizationPage() {
                                 <span className="text-sm text-slate-600">URL of the audio file (required if no audio)</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
-                                <span className="font-mono text-sm font-medium text-slate-900">num_speakers</span>
+                                <span className="font-mono text-sm font-medium text-slate-900">speakers_expected</span>
                                 <span className="text-sm text-slate-500">integer</span>
                                 <span className="text-sm text-slate-600">Exact number of speakers if known (1-20)</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
-                                <span className="font-mono text-sm font-medium text-slate-900">min_speakers</span>
+                                <span className="font-mono text-sm font-medium text-slate-900">min_speakers_expected</span>
                                 <span className="text-sm text-slate-500">integer</span>
                                 <span className="text-sm text-slate-600">Minimum number of speakers (≥1)</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
-                                <span className="font-mono text-sm font-medium text-slate-900">max_speakers</span>
+                                <span className="font-mono text-sm font-medium text-slate-900">max_speakers_expected</span>
                                 <span className="text-sm text-slate-500">integer</span>
                                 <span className="text-sm text-slate-600">Maximum number of speakers (≤20)</span>
                             </div>
@@ -106,10 +106,10 @@ export default function CreateDiarizationPage() {
                     <CardContent>
                         <div className="space-y-3 text-sm text-slate-600">
                             <p>
-                                <strong className="text-slate-900">Known speaker count:</strong> Set <code className="bg-slate-100 px-1 rounded">num_speakers</code> for best accuracy.
+                                <strong className="text-slate-900">Known speaker count:</strong> Set <code className="bg-slate-100 px-1 rounded">speakers_expected</code> for best accuracy.
                             </p>
                             <p>
-                                <strong className="text-slate-900">Unknown but bounded:</strong> Use <code className="bg-slate-100 px-1 rounded">min_speakers</code> and <code className="bg-slate-100 px-1 rounded">max_speakers</code> to constrain detection.
+                                <strong className="text-slate-900">Unknown but bounded:</strong> Use <code className="bg-slate-100 px-1 rounded">min_speakers_expected</code> and <code className="bg-slate-100 px-1 rounded">max_speakers_expected</code> to constrain detection.
                             </p>
                             <p>
                                 <strong className="text-slate-900">Fully automatic:</strong> Leave all speaker params empty for automatic detection.
@@ -127,8 +127,8 @@ export default function CreateDiarizationPage() {
                             {`curl -X POST https://api.lexia.pro/v1/diarization \\
   -H "Authorization: Bearer lx_abc123..." \\
   -F "audio=@meeting.mp3" \\
-  -F "min_speakers=2" \\
-  -F "max_speakers=5"`}
+  -F "min_speakers_expected=2" \\
+  -F "max_speakers_expected=5"`}
                         </pre>
                     </CardContent>
                 </Card>
@@ -145,6 +145,8 @@ export default function CreateDiarizationPage() {
   "status": "queued",
   "created_at": "2026-01-14T10:00:00Z",
   "completed_at": null,
+  "audio_duration": null,
+  "utterances": null,
   "speakers": null,
   "segments": null,
   "overlaps": null,
