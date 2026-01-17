@@ -212,10 +212,21 @@ class WhisperBackend(STTBackend):
                 response.raise_for_status()
                 data = response.json()
 
-            # Parse response
-            segments = []
+            # Parse words from top-level response
             words = []
+            for w in data.get("words") or []:
+                word = WordResult(
+                    text=w["text"],
+                    start=w["start"],
+                    end=w["end"],
+                    confidence=w.get("confidence", 1.0),
+                )
+                words.append(word)
+
+            # Parse segments
+            segments = []
             for seg in data.get("segments") or []:
+                # Try to get words from segment, fall back to empty
                 seg_words = []
                 for w in seg.get("words") or []:
                     word = WordResult(
@@ -225,7 +236,6 @@ class WhisperBackend(STTBackend):
                         confidence=w.get("confidence", 1.0),
                     )
                     seg_words.append(word)
-                    words.append(word)
 
                 segments.append(
                     SegmentResult(
