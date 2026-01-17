@@ -328,9 +328,6 @@ async def transcribe(
                 language_confidence=0.9,
                 duration=audio_duration,
             )
-                language_confidence=0.9,
-                duration=audio_duration,
-            )
 
         else:
             # faster-whisper API
