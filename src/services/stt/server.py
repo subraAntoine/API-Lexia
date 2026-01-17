@@ -281,11 +281,15 @@ async def transcribe(
                 task="transcribe"
             )
             
+            # Calculate max_new_tokens: model limit is 448, minus decoder prompt tokens
+            # forced_decoder_ids adds ~4 tokens, so we use 444 to be safe
+            max_new_tokens = 444
+            
             try:
                 generated_ids = whisper_model.generate(
                     input_features,
                     forced_decoder_ids=forced_decoder_ids,
-                    max_new_tokens=448,
+                    max_new_tokens=max_new_tokens,
                 )
                 
                 # Decode transcription
