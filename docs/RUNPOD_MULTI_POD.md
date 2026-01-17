@@ -163,6 +163,8 @@ USE_MOCK_LLM=false
 USE_MOCK_STT=false
 USE_MOCK_DIARIZATION=false
 
+ENABLE_DIARIZATION=true
+
 RATE_LIMIT_ENABLED=true
 RATE_LIMIT_REQUESTS_PER_MINUTE=60
 LOG_LEVEL=INFO
@@ -419,7 +421,6 @@ source venv/bin/activate
 
 # Install PyTorch 2.9 (required for vLLM)
 pip install --upgrade pip wheel setuptools
-pip install torch==2.9.0 torchvision==0.22.0 torchaudio==2.9.0
 
 # Install vLLM
 pip install vllm
@@ -433,7 +434,7 @@ pip install transformers accelerate safetensors sentencepiece tokenizers
 
 ```bash
 cat > /workspace/llm-server/.env << 'EOF'
-HF_TOKEN=hf_your_token_here
+HF_TOKEN=hf_token
 EOF
 ```
 
@@ -451,7 +452,7 @@ echo "=========================================="
 cd /workspace/llm-server
 source venv/bin/activate
 
-export HF_TOKEN="hf_your_token_here"
+export HF_TOKEN=hf_token
 
 echo "Starting vLLM (this takes 2-3 minutes)..."
 echo "  Model: Marsouuu/general7Bv2-ECE-PRYMMAL-Martial"
