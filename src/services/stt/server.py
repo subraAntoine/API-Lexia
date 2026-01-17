@@ -125,9 +125,9 @@ def load_whisper():
     global whisper_model
     if whisper_model is None:
         if USE_TRANSFORMERS:
-            # Use transformers pipeline with word timestamps support
-            from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
-            print(f"Loading Whisper model (transformers pipeline): {WHISPER_MODEL} on {DEVICE}")
+            # Use transformers with direct model loading
+            from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+            print(f"Loading Whisper model (transformers): {WHISPER_MODEL} on {DEVICE}")
 
             # Use float16 for distilled models on CUDA, float32 for CPU
             torch_dtype = torch.float16 if DEVICE == "cuda" else torch.float32
@@ -140,19 +140,9 @@ def load_whisper():
                 low_cpu_mem_usage=True,
             ).to(DEVICE)
             
-            # Create pipeline for word-level timestamps
-            pipe = pipeline(
-                "automatic-speech-recognition",
-                model=model,
-                tokenizer=processor.tokenizer,
-                feature_extractor=processor.feature_extractor,
-                torch_dtype=torch_dtype,
-                device=DEVICE,
-            )
-            
-            whisper_model = {"processor": processor, "model": model, "pipeline": pipe}
+            whisper_model = {"processor": processor, "model": model}
 
-            print(f"Whisper model loaded successfully (transformers pipeline, dtype={torch_dtype})")
+            print(f"Whisper model loaded successfully (transformers, dtype={torch_dtype})")
         else:
             # Use faster-whisper for CTranslate2 models
             from faster_whisper import WhisperModel
@@ -269,59 +259,56 @@ async def transcribe(
         audio_duration = librosa.get_duration(path=str(temp_path))
 
         if USE_TRANSFORMERS:
-            # Use transformers pipeline with word timestamps
-            pipe = model["pipeline"]
+            # Use transformers with direct model inference
+            processor = model["processor"]
+            whisper_model_inst = model["model"]
 
             # Load audio with librosa
             audio_array, sr = librosa.load(str(temp_path), sr=16000)
             
             print(f"[STT] Audio loaded: duration={audio_duration:.2f}s, samples={len(audio_array)}")
 
+            # Process audio
+            inputs = processor(audio_array, sampling_rate=16000, return_tensors="pt")
+            input_features = inputs.input_features.to(DEVICE, dtype=whisper_model_inst.dtype)
+            
+            print(f"[STT] Input features shape: {input_features.shape}")
+
+            # Prepare generation config
+            forced_decoder_ids = processor.get_decoder_prompt_ids(
+                language=language if language else "fr",
+                task="transcribe"
+            )
+            
+            # Calculate max_new_tokens: model limit is 448, minus decoder prompt tokens
+            max_new_tokens = 444
+            
             try:
-                # Use pipeline with word-level timestamps
-                generate_kwargs = {
-                    "language": language if language else "fr",
-                    "task": "transcribe",
-                }
-                
-                result = pipe(
-                    {"array": audio_array, "sampling_rate": 16000},
-                    return_timestamps="word" if word_timestamps else True,
-                    generate_kwargs=generate_kwargs,
+                generated_ids = whisper_model_inst.generate(
+                    input_features,
+                    forced_decoder_ids=forced_decoder_ids,
+                    max_new_tokens=max_new_tokens,
                 )
                 
-                text = result.get("text", "").strip()
-                chunks = result.get("chunks", [])
+                # Decode transcription
+                transcription = processor.batch_decode(
+                    generated_ids,
+                    skip_special_tokens=True,
+                )
+                text = transcription[0].strip() if transcription else ""
                 
                 print(f"[STT] Transcribed text: '{text[:100]}{'...' if len(text) > 100 else ''}' (length={len(text)})")
-                print(f"[STT] Got {len(chunks)} word chunks")
                 
             except Exception as gen_error:
                 print(f"[STT] Generation error: {gen_error}")
                 import traceback
                 traceback.print_exc()
                 text = ""
-                chunks = []
 
-            # Create response with segments and word timestamps
+            # Note: This distilled model doesn't support word-level timestamps
+            # Word timestamps will be approximated during diarization alignment
             segments: list[TranscriptionSegment] = []
             all_words: list[TranscriptionWord] = []
-            
-            # Process word chunks
-            if word_timestamps and chunks:
-                for chunk in chunks:
-                    word_text = chunk.get("text", "").strip()
-                    timestamp = chunk.get("timestamp", (0, 0))
-                    start_time = timestamp[0] if timestamp[0] is not None else 0
-                    end_time = timestamp[1] if timestamp[1] is not None else start_time + 0.1
-                    
-                    if word_text:  # Skip empty words
-                        all_words.append(TranscriptionWord(
-                            text=word_text,
-                            start=float(start_time),
-                            end=float(end_time),
-                            confidence=0.9,
-                        ))
             
             if text:
                 segments.append(TranscriptionSegment(
@@ -330,7 +317,7 @@ async def transcribe(
                     start=0,
                     end=audio_duration,
                     confidence=0.9,
-                    words=all_words if all_words else None,
+                    words=None,
                 ))
 
             return TranscriptionResponse(
@@ -338,6 +325,9 @@ async def transcribe(
                 segments=segments,
                 words=all_words,
                 language=language or "fr",
+                language_confidence=0.9,
+                duration=audio_duration,
+            )
                 language_confidence=0.9,
                 duration=audio_duration,
             )
