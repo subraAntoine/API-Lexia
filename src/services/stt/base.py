@@ -2,6 +2,7 @@
 Abstract base class for STT (Speech-to-Text) backends.
 
 Provides a consistent interface for speech recognition across different backends.
+Backend uses seconds (float) internally. API layer converts to milliseconds (int) for AssemblyAI compatibility.
 """
 
 from abc import ABC, abstractmethod
@@ -9,21 +10,42 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import AsyncIterator, BinaryIO
 
-from src.models.stt import (
-    StreamingTranscriptChunk,
-    TranscriptionResponse,
-    TranscriptionSegment,
-    TranscriptionWord,
-)
+from src.models.stt import StreamingTranscriptChunk
+
+
+# =============================================================================
+# Internal types for backends (times in seconds as float)
+# =============================================================================
+
+@dataclass
+class WordResult:
+    """A word result from transcription (internal, times in seconds)."""
+    text: str
+    start: float  # Start time in seconds
+    end: float    # End time in seconds
+    confidence: float = 1.0
+    speaker: str | None = None
+
+
+@dataclass
+class SegmentResult:
+    """A segment result from transcription (internal, times in seconds)."""
+    id: int
+    text: str
+    start: float  # Start time in seconds
+    end: float    # End time in seconds
+    confidence: float = 1.0
+    words: list[WordResult] = field(default_factory=list)
+    speaker: str | None = None
 
 
 @dataclass
 class TranscriptionResult:
-    """Internal result from STT transcription."""
+    """Internal result from STT transcription (times in seconds)."""
 
     text: str
-    segments: list[TranscriptionSegment] = field(default_factory=list)
-    words: list[TranscriptionWord] = field(default_factory=list)
+    segments: list[SegmentResult] = field(default_factory=list)
+    words: list[WordResult] = field(default_factory=list)
     language: str = "fr"
     language_confidence: float = 1.0
     duration: float = 0.0

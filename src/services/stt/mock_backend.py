@@ -2,6 +2,7 @@
 Mock STT backend for development and testing.
 
 Provides simulated transcription without requiring actual audio processing.
+Backend uses seconds (float) internally.
 """
 
 import asyncio
@@ -9,8 +10,8 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from src.core.logging import get_logger
-from src.models.stt import StreamingTranscriptChunk, TranscriptionSegment, TranscriptionWord
-from src.services.stt.base import AudioInfo, STTBackend, TranscriptionResult
+from src.models.stt import StreamingTranscriptChunk
+from src.services.stt.base import AudioInfo, STTBackend, TranscriptionResult, SegmentResult, WordResult
 
 logger = get_logger(__name__)
 
@@ -61,11 +62,11 @@ class MockSTTBackend(STTBackend):
     def _generate_mock_transcript(
         self, duration: float, language: str
     ) -> TranscriptionResult:
-        """Generate mock transcription."""
+        """Generate mock transcription (times in seconds)."""
         self._request_count += 1
         mock = MOCK_TRANSCRIPTS[self._request_count % len(MOCK_TRANSCRIPTS)]
 
-        # Generate words with timing
+        # Generate words with timing (in seconds)
         words = []
         text = mock["text"]
         word_list = text.split()
@@ -75,7 +76,7 @@ class MockSTTBackend(STTBackend):
             start = i * time_per_word
             end = start + time_per_word * 0.9
             words.append(
-                TranscriptionWord(
+                WordResult(
                     text=word,
                     start=start,
                     end=end,
@@ -83,9 +84,9 @@ class MockSTTBackend(STTBackend):
                 )
             )
 
-        # Generate segments
+        # Generate segments (times in seconds)
         segments = [
-            TranscriptionSegment(
+            SegmentResult(
                 id=0,
                 text=text,
                 start=0.0,

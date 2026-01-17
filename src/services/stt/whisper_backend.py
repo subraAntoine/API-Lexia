@@ -15,8 +15,14 @@ import soundfile as sf
 
 from src.core.exceptions import STTServiceError
 from src.core.logging import get_logger
-from src.models.stt import StreamingTranscriptChunk, TranscriptionSegment, TranscriptionWord
-from src.services.stt.base import AudioInfo, STTBackend, TranscriptionResult
+from src.models.stt import StreamingTranscriptChunk
+from src.services.stt.base import (
+    AudioInfo,
+    SegmentResult,
+    STTBackend,
+    TranscriptionResult,
+    WordResult,
+)
 
 logger = get_logger(__name__)
 
@@ -127,8 +133,8 @@ class WhisperBackend(STTBackend):
 
             # Collect results
             full_text = []
-            segments: list[TranscriptionSegment] = []
-            all_words: list[TranscriptionWord] = []
+            segments: list[SegmentResult] = []
+            all_words: list[WordResult] = []
 
             for i, segment in enumerate(segments_gen):
                 full_text.append(segment.text.strip())
@@ -136,7 +142,7 @@ class WhisperBackend(STTBackend):
                 words = []
                 if word_timestamps and segment.words:
                     for word in segment.words:
-                        word_obj = TranscriptionWord(
+                        word_obj = WordResult(
                             text=word.word,
                             start=word.start,
                             end=word.end,
@@ -146,7 +152,7 @@ class WhisperBackend(STTBackend):
                         all_words.append(word_obj)
 
                 segments.append(
-                    TranscriptionSegment(
+                    SegmentResult(
                         id=i,
                         text=segment.text.strip(),
                         start=segment.start,
@@ -212,7 +218,7 @@ class WhisperBackend(STTBackend):
             for seg in data.get("segments") or []:
                 seg_words = []
                 for w in seg.get("words") or []:
-                    word = TranscriptionWord(
+                    word = WordResult(
                         text=w["text"],
                         start=w["start"],
                         end=w["end"],
@@ -222,7 +228,7 @@ class WhisperBackend(STTBackend):
                     words.append(word)
 
                 segments.append(
-                    TranscriptionSegment(
+                    SegmentResult(
                         id=seg["id"],
                         text=seg["text"],
                         start=seg["start"],

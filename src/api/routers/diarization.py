@@ -83,9 +83,9 @@ async def create_diarization(
     db: Annotated[AsyncSession, Depends(get_db)],
     audio: UploadFile | None = File(None, description="Audio file to diarize"),
     audio_url: str | None = Form(None, description="URL of audio file to diarize"),
-    num_speakers: int | None = Form(None, ge=1, le=20, description="Exact number of speakers (if known)"),
-    min_speakers: int | None = Form(None, ge=1, description="Minimum number of speakers"),
-    max_speakers: int | None = Form(None, le=20, description="Maximum number of speakers"),
+    speakers_expected: int | None = Form(None, ge=1, le=20, description="Set exact number of speakers (if known)"),
+    min_speakers_expected: int | None = Form(None, ge=1, description="Minimum number of speakers expected"),
+    max_speakers_expected: int | None = Form(None, le=20, description="Maximum number of speakers expected"),
     webhook_url: str | None = Form(None, description="URL to call when processing completes"),
 ) -> DiarizationResponse:
     """
@@ -100,9 +100,9 @@ async def create_diarization(
         "diarization_job_request",
         has_audio_file=audio is not None,
         has_audio_url=audio_url is not None,
-        num_speakers=num_speakers,
-        min_speakers=min_speakers,
-        max_speakers=max_speakers,
+        speakers_expected=speakers_expected,
+        min_speakers_expected=min_speakers_expected,
+        max_speakers_expected=max_speakers_expected,
         has_webhook=webhook_url is not None,
         user_id=user.user_id,
     )
@@ -197,9 +197,9 @@ async def create_diarization(
     job = await job_repo.create(
         job_type="diarization",
         params={
-            "num_speakers": num_speakers,
-            "min_speakers": min_speakers,
-            "max_speakers": max_speakers,
+            "speakers_expected": speakers_expected,
+            "min_speakers_expected": min_speakers_expected,
+            "max_speakers_expected": max_speakers_expected,
             "audio_url": source_url,
         },
         user_id=user.user_id,
@@ -214,9 +214,9 @@ async def create_diarization(
         task = process_diarization.delay(
             str(job.id),
             audio_storage_key,
-            num_speakers,
-            min_speakers,
-            max_speakers,
+            speakers_expected,
+            min_speakers_expected,
+            max_speakers_expected,
         )
         await job_repo.set_celery_task_id(job.id, task.id)
         await db.commit()
@@ -227,7 +227,7 @@ async def create_diarization(
         job_id=str(job.id),
         audio_storage_key=audio_storage_key,
         audio_url=source_url,
-        num_speakers=num_speakers,
+        speakers_expected=speakers_expected,
         has_webhook=webhook_url is not None,
         duration_ms=round(duration_ms, 2),
         user_id=user.user_id,
@@ -340,7 +340,7 @@ async def get_diarization(
 
     # Populate results if available
     if job.result:
-        from src.models.stt import Speaker, SpeakerSegment
+        from src.models.stt import Speaker, SpeakerSegment, Utterance
 
         response.speakers = [
             Speaker(**s) for s in job.result.get("speakers", [])
@@ -348,8 +348,13 @@ async def get_diarization(
         response.segments = [
             SpeakerSegment(**s) for s in job.result.get("segments", [])
         ]
+        # AssemblyAI format: utterances
+        response.utterances = [
+            Utterance(**u) for u in job.result.get("utterances", [])
+        ]
         if job.result.get("stats"):
             response.stats = DiarizationStats(**job.result["stats"])
+            response.audio_duration = job.result["stats"].get("audio_duration")
         response.rttm = job.result.get("rttm")
 
     if job.error_message:
@@ -410,9 +415,9 @@ async def sync_diarization(
     user: RateLimitedUser,
     settings: Annotated[Settings, Depends(get_settings)],
     audio: UploadFile = File(..., description="Audio file to diarize (wav, mp3, m4a, flac, ogg, webm)"),
-    num_speakers: int | None = Form(None, ge=1, le=20, description="Exact number of speakers (if known)"),
-    min_speakers: int | None = Form(None, ge=1, description="Minimum number of speakers"),
-    max_speakers: int | None = Form(None, le=20, description="Maximum number of speakers"),
+    speakers_expected: int | None = Form(None, ge=1, le=20, description="Set exact number of speakers (if known)"),
+    min_speakers_expected: int | None = Form(None, ge=1, description="Minimum number of speakers expected"),
+    max_speakers_expected: int | None = Form(None, le=20, description="Maximum number of speakers expected"),
 ) -> DiarizationResponse:
     """
     Synchronous diarization for short audio.
@@ -430,9 +435,9 @@ async def sync_diarization(
         request_id=request_id,
         filename=audio.filename,
         content_type=audio.content_type,
-        num_speakers=num_speakers,
-        min_speakers=min_speakers,
-        max_speakers=max_speakers,
+        speakers_expected=speakers_expected,
+        min_speakers_expected=min_speakers_expected,
+        max_speakers_expected=max_speakers_expected,
         user_id=user.user_id,
     )
 
@@ -482,9 +487,9 @@ async def sync_diarization(
         diarize_start = time.time()
         result = await backend.diarize(
             temp_path,
-            num_speakers=num_speakers,
-            min_speakers=min_speakers,
-            max_speakers=max_speakers,
+            num_speakers=speakers_expected,
+            min_speakers=min_speakers_expected,
+            max_speakers=max_speakers_expected,
         )
         diarize_duration_ms = (time.time() - diarize_start) * 1000
 
@@ -511,6 +516,8 @@ async def sync_diarization(
             status=TranscriptionStatus.COMPLETED,
             created_at=datetime.now(timezone.utc),
             completed_at=datetime.now(timezone.utc),
+            audio_duration=audio_duration,
+            utterances=result.utterances,
             speakers=result.speakers,
             segments=result.segments,
             overlaps=result.overlaps,

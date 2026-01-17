@@ -38,17 +38,17 @@ def process_transcription(
     job_id: str,
     audio_storage_key: str,
     language: str | None = None,
-    speaker_diarization: bool = False,
+    speaker_labels: bool = False,
     word_timestamps: bool = True,
 ):
     """
-    Process audio transcription.
+    Process audio transcription (AssemblyAI format).
 
     Args:
         job_id: Job UUID string.
         audio_storage_key: Storage key for audio file.
         language: Language code (auto-detect if None).
-        speaker_diarization: Enable speaker diarization.
+        speaker_labels: Enable speaker diarization.
         word_timestamps: Include word-level timestamps.
     """
     return run_async(
@@ -57,7 +57,7 @@ def process_transcription(
             job_id,
             audio_storage_key,
             language,
-            speaker_diarization,
+            speaker_labels,
             word_timestamps,
         )
     )
@@ -68,10 +68,10 @@ async def _process_transcription_async(
     job_id: str,
     audio_storage_key: str,
     language: str | None,
-    speaker_diarization: bool,
+    speaker_labels: bool,
     word_timestamps: bool,
 ):
-    """Async implementation of transcription processing."""
+    """Async implementation of transcription processing (AssemblyAI format)."""
     from src.core.config import get_settings
     from src.core.logging import get_logger
     from src.db.repositories.job import JobRepository
@@ -129,13 +129,13 @@ async def _process_transcription_async(
 
                 await job_repo.update_progress(job_uuid, 60, "Processing results")
 
-                # Save transcription result
+                # Save transcription result (AssemblyAI format: times in milliseconds)
                 segments = [
                     {
                         "id": s.id,
                         "text": s.text,
-                        "start": s.start,
-                        "end": s.end,
+                        "start": int(s.start * 1000),  # Convert to ms
+                        "end": int(s.end * 1000),      # Convert to ms
                         "confidence": s.confidence,
                     }
                     for s in result.segments
@@ -143,9 +143,10 @@ async def _process_transcription_async(
                 words = [
                     {
                         "text": w.text,
-                        "start": w.start,
-                        "end": w.end,
+                        "start": int(w.start * 1000),  # Convert to ms
+                        "end": int(w.end * 1000),      # Convert to ms
                         "confidence": w.confidence,
+                        "speaker": None,  # Will be set by diarization
                     }
                     for w in result.words
                 ]
@@ -161,23 +162,33 @@ async def _process_transcription_async(
                 )
 
                 # Run diarization if requested
-                if speaker_diarization:
+                if speaker_labels:
                     await job_repo.update_progress(job_uuid, 70, "Diarizing speakers")
 
                     diarization_backend = get_diarization_backend(settings)
                     diar_result = await diarization_backend.diarize(temp_path)
 
+                    # AssemblyAI format: speakers as letters (A, B, C...)
                     speakers = [s.id for s in diar_result.speakers]
-                    utterances = []
+                    
+                    # Build utterances from diarization (AssemblyAI format)
+                    utterances = [
+                        {
+                            "speaker": u.speaker,
+                            "start": u.start,  # Already in ms from diarization backend
+                            "end": u.end,      # Already in ms from diarization backend
+                            "text": u.text,
+                            "confidence": u.confidence,
+                        }
+                        for u in diar_result.utterances
+                    ]
 
-                    # TODO: Merge transcription with diarization
-                    # For now, just save diarization segments
-
+                    # Diarization segments (AssemblyAI format: already in ms)
                     diar_segments = [
                         {
                             "speaker": s.speaker,
-                            "start": s.start,
-                            "end": s.end,
+                            "start": s.start,  # Already in ms
+                            "end": s.end,      # Already in ms
                             "confidence": s.confidence,
                         }
                         for s in diar_result.segments
@@ -188,7 +199,7 @@ async def _process_transcription_async(
                         diar_stats = {
                             "num_speakers": diar_result.stats.num_speakers,
                             "num_segments": diar_result.stats.num_segments,
-                            "audio_duration": diar_result.stats.audio_duration,
+                            "audio_duration": diar_result.stats.audio_duration,  # Already in ms
                         }
 
                     await trans_repo.set_diarization_result(
@@ -245,7 +256,7 @@ def process_transcription_url(
     job_id: str,
     audio_url: str,
     language: str | None = None,
-    speaker_diarization: bool = False,
+    speaker_labels: bool = False,
 ):
     """
     Process transcription from URL.
@@ -254,7 +265,7 @@ def process_transcription_url(
     """
     return run_async(
         _process_transcription_url_async(
-            job_id, audio_url, language, speaker_diarization
+            job_id, audio_url, language, speaker_labels
         )
     )
 
@@ -263,7 +274,7 @@ async def _process_transcription_url_async(
     job_id: str,
     audio_url: str,
     language: str | None,
-    speaker_diarization: bool,
+    speaker_labels: bool,
 ):
     """Download audio from URL and process."""
     import httpx
@@ -297,5 +308,5 @@ async def _process_transcription_url_async(
         job_id,
         storage_key,
         language,
-        speaker_diarization,
+        speaker_labels,
     )

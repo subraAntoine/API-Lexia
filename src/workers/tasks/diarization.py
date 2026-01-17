@@ -118,14 +118,15 @@ async def _process_diarization_async(
 
                 await job_repo.update_progress(job_uuid, 90, "Finalizing")
 
-                # Prepare result
+                # Prepare result (AssemblyAI format)
                 speakers = [
                     {
                         "id": s.id,
                         "label": s.label,
-                        "total_duration": s.total_duration,
+                        "total_duration": s.total_duration,  # In milliseconds
                         "num_segments": s.num_segments,
                         "percentage": s.percentage if hasattr(s, 'percentage') else 0.0,
+                        "avg_segment_duration": s.avg_segment_duration if hasattr(s, 'avg_segment_duration') else 0,
                     }
                     for s in result.speakers
                 ]
@@ -133,11 +134,23 @@ async def _process_diarization_async(
                 segments = [
                     {
                         "speaker": s.speaker,
-                        "start": s.start,
-                        "end": s.end,
+                        "start": s.start,  # In milliseconds
+                        "end": s.end,      # In milliseconds
                         "confidence": s.confidence,
                     }
                     for s in result.segments
+                ]
+                
+                # AssemblyAI format: utterances
+                utterances = [
+                    {
+                        "speaker": u.speaker,
+                        "start": u.start,  # In milliseconds
+                        "end": u.end,      # In milliseconds
+                        "text": u.text,
+                        "confidence": u.confidence,
+                    }
+                    for u in result.utterances
                 ]
 
                 stats = None
@@ -148,14 +161,15 @@ async def _process_diarization_async(
                         "num_speakers": result.stats.num_speakers,
                         "num_segments": result.stats.num_segments,
                         "num_overlaps": result.stats.num_overlaps,
-                        "overlap_duration": result.stats.overlap_duration,
-                        "audio_duration": result.stats.audio_duration,
-                        "processing_time": result.stats.processing_time,
+                        "overlap_duration": result.stats.overlap_duration,  # In milliseconds
+                        "audio_duration": result.stats.audio_duration,      # In milliseconds
+                        "processing_time": result.stats.processing_time,    # In milliseconds
                     }
 
                 job_result = {
                     "speakers": speakers,
                     "segments": segments,
+                    "utterances": utterances,  # AssemblyAI format
                     "stats": stats,
                     "rttm": result.rttm,
                 }

@@ -66,10 +66,13 @@ async def create_transcription(
     db: Annotated[AsyncSession, Depends(get_db)],
     audio: UploadFile | None = File(None, description="Audio file to transcribe"),
     audio_url: str | None = Form(None, description="URL to audio file"),
-    language_code: LanguageCode = Form(LanguageCode.FR),
-    speaker_diarization: bool = Form(False),
-    word_timestamps: bool = Form(True),
-    webhook_url: str | None = Form(None),
+    language_code: LanguageCode = Form(LanguageCode.FR, description="Language code or 'auto' for detection"),
+    language_detection: bool = Form(False, description="Enable automatic language detection"),
+    punctuate: bool = Form(True, description="Enable automatic punctuation"),
+    format_text: bool = Form(True, description="Enable text formatting"),
+    speaker_labels: bool = Form(False, description="Enable speaker diarization"),
+    speakers_expected: int | None = Form(None, ge=1, le=20, description="Set exact number of speakers"),
+    webhook_url: str | None = Form(None, description="URL to call when transcription is complete"),
 ) -> TranscriptionJob:
     """
     Create a new transcription job.
@@ -159,8 +162,11 @@ async def create_transcription(
         job_type="transcription",
         params={
             "language_code": language_code.value,
-            "speaker_diarization": speaker_diarization,
-            "word_timestamps": word_timestamps,
+            "language_detection": language_detection,
+            "punctuate": punctuate,
+            "format_text": format_text,
+            "speaker_labels": speaker_labels,
+            "speakers_expected": speakers_expected,
         },
         user_id=user.user_id,
         api_key_id=uuid.UUID(user.api_key_id),
@@ -173,8 +179,8 @@ async def create_transcription(
         audio_url=source_url,
         audio_storage_key=audio_storage_key,
         language_code=language_code.value if language_code != LanguageCode.AUTO else None,
-        speaker_diarization=speaker_diarization,
-        word_timestamps=word_timestamps,
+        speaker_diarization=speaker_labels,
+        word_timestamps=True,  # Always enabled for AssemblyAI compatibility
         user_id=user.user_id,
         api_key_id=uuid.UUID(user.api_key_id),
     )
@@ -187,8 +193,8 @@ async def create_transcription(
             str(job.id),
             audio_storage_key,
             language_code.value if language_code != LanguageCode.AUTO else None,
-            speaker_diarization,
-            word_timestamps,
+            speaker_labels,
+            True,  # word_timestamps always enabled for AssemblyAI compatibility
         )
         await job_repo.set_celery_task_id(job.id, task.id)
         await db.commit()
@@ -199,7 +205,8 @@ async def create_transcription(
         job_id=str(job.id),
         transcription_id=str(transcription.id),
         language=language_code.value,
-        speaker_diarization=speaker_diarization,
+        language_detection=language_detection,
+        speaker_labels=speaker_labels,
         has_webhook=webhook_url is not None,
         duration_ms=round(duration_ms, 2),
         user_id=user.user_id,
@@ -299,23 +306,36 @@ async def get_transcription(
         duration_ms=round(duration_ms, 2),
         user_id=user.user_id,
     )
+    
+    # Compute overall confidence from words if available
+    confidence = None
+    if transcription.words:
+        word_confidences = [w.get("confidence", 0) for w in transcription.words if isinstance(w, dict)]
+        if word_confidences:
+            confidence = sum(word_confidences) / len(word_confidences)
 
     return TranscriptionResponse(
         id=str(transcription.id),
         status=status,
+        audio_url=transcription.audio_url,
+        audio_duration=int(transcription.audio_duration) if transcription.audio_duration else None,
+        text=transcription.text,
+        words=transcription.words,
+        confidence=confidence,
+        utterances=transcription.utterances,
+        language_code=transcription.language_detected or transcription.language_code,
+        language_detection=transcription.language_code is None,
+        language_confidence=transcription.language_confidence,
+        punctuate=True,  # Always enabled
+        format_text=True,  # Always enabled
+        speaker_labels=transcription.speaker_diarization,
+        webhook_url=None,  # Not stored in transcription record
+        error=transcription.error,
         created_at=transcription.created_at,
         completed_at=transcription.completed_at,
-        audio_url=transcription.audio_url,
-        audio_duration=transcription.audio_duration,
-        text=transcription.text,
-        segments=transcription.segments,
-        words=transcription.words,
-        language_code=transcription.language_detected or transcription.language_code,
-        language_confidence=transcription.language_confidence,
-        speakers=transcription.speakers,
-        utterances=transcription.utterances,
-        error=transcription.error,
-        metadata=transcription.extra_data,  # SQLAlchemy reserves 'metadata'
+        segments=transcription.segments,  # Legacy
+        speakers=transcription.speakers,  # Legacy
+        metadata=transcription.extra_data,
     )
 
 
@@ -351,7 +371,8 @@ async def sync_transcription(
     settings: Annotated[Settings, Depends(get_settings)],
     audio: UploadFile = File(..., description="Audio file to transcribe (wav, mp3, m4a, flac, ogg, webm)"),
     language_code: LanguageCode = Form(LanguageCode.FR, description="Language code or 'auto' for detection"),
-    word_timestamps: bool = Form(True, description="Include word-level timestamps"),
+    punctuate: bool = Form(True, description="Enable automatic punctuation"),
+    format_text: bool = Form(True, description="Enable text formatting"),
 ) -> TranscriptionResponse:
     """
     Synchronous transcription.
@@ -370,7 +391,8 @@ async def sync_transcription(
         filename=audio.filename,
         content_type=audio.content_type,
         language_code=language_code.value,
-        word_timestamps=word_timestamps,
+        punctuate=punctuate,
+        format_text=format_text,
         user_id=user.user_id,
     )
 
@@ -425,30 +447,27 @@ async def sync_transcription(
         result = await stt_backend.transcribe(
             temp_path,
             language=language_code.value if language_code != LanguageCode.AUTO else None,
-            word_timestamps=word_timestamps,
+            word_timestamps=True,  # Always enabled for AssemblyAI compatibility
         )
         transcribe_duration_ms = (time.time() - transcribe_start) * 1000
 
-        # Build response
-        segments = [
-            {
-                "id": s.id,
-                "text": s.text,
-                "start": s.start,
-                "end": s.end,
-                "confidence": s.confidence,
-            }
-            for s in result.segments
-        ]
+        # Build words in AssemblyAI format (milliseconds)
         words = [
             {
                 "text": w.text,
-                "start": w.start,
-                "end": w.end,
+                "start": int(w.start * 1000),  # Convert to ms
+                "end": int(w.end * 1000),      # Convert to ms
                 "confidence": w.confidence,
+                "speaker": None,  # No diarization in sync mode
             }
             for w in result.words
-        ] if word_timestamps else None
+        ]
+        
+        # Compute overall confidence
+        confidence = None
+        if words:
+            word_confidences = [w["confidence"] for w in words]
+            confidence = sum(word_confidences) / len(word_confidences)
 
         total_duration_ms = (time.time() - start_time) * 1000
 
@@ -457,8 +476,7 @@ async def sync_transcription(
             request_id=request_id,
             audio_duration=result.duration,
             text_length=len(result.text) if result.text else 0,
-            segments_count=len(segments),
-            words_count=len(words) if words else 0,
+            words_count=len(words),
             language_detected=result.language,
             language_confidence=result.language_confidence,
             transcribe_duration_ms=round(transcribe_duration_ms, 2),
@@ -470,14 +488,18 @@ async def sync_transcription(
         return TranscriptionResponse(
             id=request_id,
             status=TranscriptionStatus.COMPLETED,
+            audio_duration=int(result.duration) if result.duration else None,
+            text=result.text,
+            words=words,
+            confidence=confidence,
+            language_code=result.language,
+            language_detection=language_code == LanguageCode.AUTO,
+            language_confidence=result.language_confidence,
+            punctuate=True,
+            format_text=True,
+            speaker_labels=False,
             created_at=datetime.now(timezone.utc),
             completed_at=datetime.now(timezone.utc),
-            audio_duration=result.duration,
-            text=result.text,
-            segments=segments,
-            words=words,
-            language_code=result.language,
-            language_confidence=result.language_confidence,
         )
 
     except Exception as e:

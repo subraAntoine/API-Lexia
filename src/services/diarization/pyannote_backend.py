@@ -12,8 +12,8 @@ import httpx
 
 from src.core.exceptions import DiarizationServiceError
 from src.core.logging import get_logger
-from src.models.stt import DiarizationStats, OverlapSegment, SpeakerSegment
-from src.services.diarization.base import DiarizationBackend, DiarizationResult
+from src.models.stt import DiarizationStats, OverlapSegment, SpeakerSegment, Utterance
+from src.services.diarization.base import DiarizationBackend, DiarizationResult, speaker_id_to_letter
 
 logger = get_logger(__name__)
 
@@ -164,17 +164,29 @@ class PyannoteBackend(DiarizationBackend):
             # pyannote 3.x API - already an Annotation
             diarization = diarization_output
         
+        # Build speaker mapping for AssemblyAI format (SPEAKER_00 -> A, SPEAKER_01 -> B, etc.)
+        speaker_mapping: dict[str, str] = {}
+        speaker_index = 0
+        
         segments: list[SpeakerSegment] = []
         
         # Now use itertracks on the Annotation object
         for turn, _, speaker in diarization.itertracks(yield_label=True):
             duration = turn.end - turn.start
             if duration >= min_segment_duration:
+                # Map speaker to letter format if not already mapped
+                if speaker not in speaker_mapping:
+                    speaker_mapping[speaker] = speaker_id_to_letter(speaker)
+                    speaker_index += 1
+                
+                speaker_letter = speaker_mapping[speaker]
+                
+                # Convert to milliseconds (AssemblyAI format)
                 segments.append(
                     SpeakerSegment(
-                        speaker=speaker,
-                        start=turn.start,
-                        end=turn.end,
+                        speaker=speaker_letter,
+                        start=int(turn.start * 1000),  # Convert to ms
+                        end=int(turn.end * 1000),      # Convert to ms
                         confidence=1.0,  # Pyannote doesn't provide per-segment confidence
                     )
                 )
@@ -183,8 +195,8 @@ class PyannoteBackend(DiarizationBackend):
         if merge_gaps > 0:
             segments = self._merge_gaps(segments, merge_gaps)
 
-        # Detect overlaps
-        overlaps = self._detect_overlaps(diarization)
+        # Detect overlaps (with speaker mapping)
+        overlaps = self._detect_overlaps(diarization, speaker_mapping)
 
         # Compute speaker stats
         speaker_stats = self.compute_speaker_stats(segments)
@@ -193,6 +205,7 @@ class PyannoteBackend(DiarizationBackend):
         # Get audio duration
         import librosa
         audio_duration = librosa.get_duration(path=str(audio_path))
+        audio_duration_ms = int(audio_duration * 1000)  # Convert to ms
 
         # Compute total overlap duration
         total_overlap = sum(o.duration for o in overlaps)
@@ -200,16 +213,29 @@ class PyannoteBackend(DiarizationBackend):
         stats = DiarizationStats(
             version="1.0",
             model=self.model_name,
-            audio_duration=audio_duration,
+            audio_duration=audio_duration_ms,  # AssemblyAI format: milliseconds
             num_speakers=len(speakers),
             num_segments=len(segments),
             num_overlaps=len(overlaps),
-            overlap_duration=total_overlap,
-            processing_time=processing_time,
+            overlap_duration=total_overlap,  # Already in ms from _detect_overlaps
+            processing_time=int(processing_time * 1000),  # Convert to ms
         )
 
-        # Generate RTTM
+        # Generate RTTM (still uses seconds as per RTTM standard)
         rttm = self.generate_rttm(segments, audio_path.stem)
+        
+        # Create utterances (AssemblyAI format) - these are the same as segments but with text field
+        # For diarization-only (no transcription), text will be empty
+        utterances = [
+            Utterance(
+                speaker=seg.speaker,
+                start=seg.start,
+                end=seg.end,
+                text="",  # No transcription in diarization-only mode
+                confidence=seg.confidence,
+            )
+            for seg in segments
+        ]
 
         logger.info(
             "diarization_complete",
@@ -221,6 +247,7 @@ class PyannoteBackend(DiarizationBackend):
         return DiarizationResult(
             speakers=speakers,
             segments=segments,
+            utterances=utterances,  # AssemblyAI format
             overlaps=overlaps,
             stats=stats,
             rttm=rttm,
@@ -231,19 +258,24 @@ class PyannoteBackend(DiarizationBackend):
         segments: list[SpeakerSegment],
         max_gap: float,
     ) -> list[SpeakerSegment]:
-        """Merge segments from same speaker with small gaps."""
+        """Merge segments from same speaker with small gaps.
+        
+        Note: max_gap is in seconds, but segments use milliseconds (AssemblyAI format).
+        """
         if not segments:
             return segments
 
+        max_gap_ms = int(max_gap * 1000)  # Convert to ms
+        
         # Sort by start time
         sorted_segments = sorted(segments, key=lambda s: s.start)
         merged = [sorted_segments[0]]
 
         for seg in sorted_segments[1:]:
             prev = merged[-1]
-            gap = seg.start - prev.end
+            gap = seg.start - prev.end  # Already in ms
 
-            if seg.speaker == prev.speaker and gap <= max_gap:
+            if seg.speaker == prev.speaker and gap <= max_gap_ms:
                 # Merge with previous
                 merged[-1] = SpeakerSegment(
                     speaker=prev.speaker,
@@ -256,9 +288,16 @@ class PyannoteBackend(DiarizationBackend):
 
         return merged
 
-    def _detect_overlaps(self, diarization: object) -> list[OverlapSegment]:
-        """Detect overlapping speech segments."""
+    def _detect_overlaps(
+        self, 
+        diarization: object,
+        speaker_mapping: dict[str, str] | None = None,
+    ) -> list[OverlapSegment]:
+        """Detect overlapping speech segments (AssemblyAI format: milliseconds)."""
         overlaps: list[OverlapSegment] = []
+        
+        if speaker_mapping is None:
+            speaker_mapping = {}
 
         # Handle pyannote 4.x DiarizeOutput - extract Annotation first
         if hasattr(diarization, 'speaker_diarization'):
@@ -276,14 +315,24 @@ class PyannoteBackend(DiarizationBackend):
                 overlap_end = min(turn1.end, turn2.end)
 
                 if overlap_start < overlap_end:
+                    # Map speakers to letter format
+                    speaker1_letter = speaker_mapping.get(speaker1, speaker_id_to_letter(speaker1))
+                    speaker2_letter = speaker_mapping.get(speaker2, speaker_id_to_letter(speaker2))
+                    
+                    # Convert to milliseconds
+                    start_ms = int(overlap_start * 1000)
+                    end_ms = int(overlap_end * 1000)
+                    
                     overlaps.append(
                         OverlapSegment(
-                            speakers=[speaker1, speaker2],
-                            start=overlap_start,
-                            end=overlap_end,
-                            duration=overlap_end - overlap_start,
+                            speakers=[speaker1_letter, speaker2_letter],
+                            start=start_ms,
+                            end=end_ms,
+                            duration=end_ms - start_ms,
                         )
                     )
+
+        return overlaps
 
         return overlaps
 

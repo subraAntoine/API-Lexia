@@ -52,11 +52,11 @@ class LanguageCode(str, Enum):
 
 
 class TranscriptionWord(StrictBaseModel):
-    """A word in the transcription with timing information."""
+    """A word in the transcription with timing information (AssemblyAI format)."""
 
     text: str = Field(..., description="The transcribed word")
-    start: float = Field(..., ge=0, description="Start time in seconds")
-    end: float = Field(..., ge=0, description="End time in seconds")
+    start: int = Field(..., ge=0, description="Start time in milliseconds")
+    end: int = Field(..., ge=0, description="End time in milliseconds")
     confidence: float = Field(
         ...,
         ge=0.0,
@@ -65,17 +65,17 @@ class TranscriptionWord(StrictBaseModel):
     )
     speaker: str | None = Field(
         default=None,
-        description="Speaker label (if diarization enabled)",
+        description="Speaker label (A, B, C, etc.)",
     )
 
 
 class TranscriptionSegment(StrictBaseModel):
-    """A segment of transcribed text."""
+    """A segment of transcribed text (AssemblyAI format)."""
 
     id: int = Field(..., description="Segment index")
     text: str = Field(..., description="Transcribed text")
-    start: float = Field(..., ge=0, description="Start time in seconds")
-    end: float = Field(..., ge=0, description="End time in seconds")
+    start: int = Field(..., ge=0, description="Start time in milliseconds")
+    end: int = Field(..., ge=0, description="End time in milliseconds")
     confidence: float = Field(
         default=1.0,
         ge=0.0,
@@ -88,7 +88,7 @@ class TranscriptionSegment(StrictBaseModel):
     )
     speaker: str | None = Field(
         default=None,
-        description="Speaker label",
+        description="Speaker label (A, B, C, etc.)",
     )
 
 
@@ -129,8 +129,8 @@ class TranscriptionRequest(StrictBaseModel):
         description="Include word-level timestamps",
     )
 
-    # Diarization options
-    speaker_diarization: bool = Field(
+    # Diarization options (AssemblyAI naming convention)
+    speaker_labels: bool = Field(
         default=False,
         description="Enable speaker diarization",
     )
@@ -138,17 +138,17 @@ class TranscriptionRequest(StrictBaseModel):
         default=None,
         ge=1,
         le=20,
-        description="Expected number of speakers",
+        description="Set exact number of speakers (if known)",
     )
-    min_speakers: int | None = Field(
+    min_speakers_expected: int | None = Field(
         default=None,
         ge=1,
-        description="Minimum number of speakers",
+        description="Minimum number of speakers expected",
     )
-    max_speakers: int | None = Field(
+    max_speakers_expected: int | None = Field(
         default=None,
         le=20,
-        description="Maximum number of speakers",
+        description="Maximum number of speakers expected",
     )
 
     # Processing mode
@@ -184,24 +184,17 @@ class TranscriptionRequest(StrictBaseModel):
 
 class TranscriptionResponse(StrictBaseModel):
     """
-    Response from transcription.
+    Response from transcription (AssemblyAI format).
 
     Contains full transcript and optional word/speaker details.
     """
 
     id: str = Field(..., description="Unique transcription ID")
     status: TranscriptionStatus = Field(..., description="Transcription status")
-
-    # Timing
-    created_at: datetime = Field(..., description="Creation timestamp")
-    completed_at: datetime | None = Field(
-        default=None,
-        description="Completion timestamp",
-    )
-
-    # Audio info
+    
+    # Audio info (AssemblyAI format)
     audio_url: str | None = Field(default=None, description="Source audio URL")
-    audio_duration: float | None = Field(
+    audio_duration: int | None = Field(
         default=None,
         description="Audio duration in seconds",
     )
@@ -211,39 +204,93 @@ class TranscriptionResponse(StrictBaseModel):
         default=None,
         description="Full transcript text",
     )
-    segments: list[TranscriptionSegment] | None = Field(
-        default=None,
-        description="Transcript segments",
-    )
     words: list[TranscriptionWord] | None = Field(
         default=None,
-        description="Word-level transcript",
+        description="Word-level transcript with timing in milliseconds",
+    )
+    
+    # Confidence score for the entire transcript
+    confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Confidence score for the transcript (0-1)",
     )
 
-    # Language
+    # Speaker diarization results (AssemblyAI format)
+    utterances: list["Utterance"] | None = Field(
+        default=None,
+        description="Speaker-attributed utterances (when speaker_labels is enabled)",
+    )
+
+    # Language detection
     language_code: str | None = Field(
         default=None,
-        description="Detected or specified language",
+        description="Detected or specified language code",
+    )
+    language_detection: bool | None = Field(
+        default=None,
+        description="Whether language detection was enabled",
     )
     language_confidence: float | None = Field(
         default=None,
-        description="Language detection confidence",
+        ge=0.0,
+        le=1.0,
+        description="Language detection confidence (0-1)",
     )
-
-    # Diarization results
-    speakers: list[str] | None = Field(
+    
+    # Transcription options echoed back
+    punctuate: bool | None = Field(
         default=None,
-        description="List of detected speakers",
+        description="Whether punctuation was enabled",
     )
-    utterances: list["Utterance"] | None = Field(
+    format_text: bool | None = Field(
         default=None,
-        description="Speaker-attributed utterances",
+        description="Whether text formatting was enabled",
+    )
+    speaker_labels: bool | None = Field(
+        default=None,
+        description="Whether speaker diarization was enabled",
+    )
+    speakers_expected: int | None = Field(
+        default=None,
+        description="Number of speakers expected (if specified)",
+    )
+    
+    # Webhook info
+    webhook_url: str | None = Field(
+        default=None,
+        description="Webhook URL (if specified)",
+    )
+    webhook_status_code: int | None = Field(
+        default=None,
+        description="HTTP status code from webhook delivery",
     )
 
     # Error info (if status is "error")
     error: str | None = Field(
         default=None,
         description="Error message if status is 'error'",
+    )
+    
+    # Timing (internal)
+    created_at: datetime | None = Field(
+        default=None,
+        description="Creation timestamp",
+    )
+    completed_at: datetime | None = Field(
+        default=None,
+        description="Completion timestamp",
+    )
+    
+    # Legacy fields for backward compatibility
+    segments: list[TranscriptionSegment] | None = Field(
+        default=None,
+        description="Transcript segments (deprecated, use words)",
+    )
+    speakers: list[str] | None = Field(
+        default=None,
+        description="List of detected speakers (deprecated, use utterances)",
     )
 
     # Metadata
@@ -278,16 +325,16 @@ class TranscriptionJob(StrictBaseModel):
 
 
 class Speaker(StrictBaseModel):
-    """Information about a detected speaker."""
+    """Information about a detected speaker (AssemblyAI format)."""
 
-    id: str = Field(..., description="Speaker identifier (e.g., 'SPEAKER_00')")
+    id: str = Field(..., description="Speaker identifier (A, B, C, etc.)")
     label: str | None = Field(
         default=None,
         description="Custom label if provided",
     )
-    total_duration: float = Field(
-        default=0.0,
-        description="Total speaking time in seconds",
+    total_duration: int = Field(
+        default=0,
+        description="Total speaking time in milliseconds",
     )
     num_segments: int = Field(
         default=0,
@@ -297,18 +344,18 @@ class Speaker(StrictBaseModel):
         default=0.0,
         description="Percentage of total speaking time",
     )
-    avg_segment_duration: float = Field(
-        default=0.0,
-        description="Average segment duration",
+    avg_segment_duration: int = Field(
+        default=0,
+        description="Average segment duration in milliseconds",
     )
 
 
 class SpeakerSegment(StrictBaseModel):
-    """A segment of speech by a speaker."""
+    """A segment of speech by a speaker (AssemblyAI format)."""
 
-    speaker: str = Field(..., description="Speaker identifier")
-    start: float = Field(..., ge=0, description="Start time in seconds")
-    end: float = Field(..., ge=0, description="End time in seconds")
+    speaker: str = Field(..., description="Speaker identifier (A, B, C, etc.)")
+    start: int = Field(..., ge=0, description="Start time in milliseconds")
+    end: int = Field(..., ge=0, description="End time in milliseconds")
     confidence: float = Field(
         default=1.0,
         ge=0.0,
@@ -318,11 +365,11 @@ class SpeakerSegment(StrictBaseModel):
 
 
 class Utterance(StrictBaseModel):
-    """An utterance by a speaker with transcript."""
+    """An utterance by a speaker with transcript (AssemblyAI format)."""
 
-    speaker: str = Field(..., description="Speaker identifier")
-    start: float = Field(..., ge=0, description="Start time in seconds")
-    end: float = Field(..., ge=0, description="End time in seconds")
+    speaker: str = Field(..., description="Speaker identifier (A, B, C, etc.)")
+    start: int = Field(..., ge=0, description="Start time in milliseconds")
+    end: int = Field(..., ge=0, description="End time in milliseconds")
     text: str = Field(..., description="Transcribed text")
     confidence: float = Field(
         default=1.0,
@@ -337,38 +384,42 @@ class Utterance(StrictBaseModel):
 
 
 class OverlapSegment(StrictBaseModel):
-    """A segment where speakers overlap."""
+    """A segment where speakers overlap (AssemblyAI format)."""
 
-    speakers: list[str] = Field(..., description="Speakers involved")
-    start: float = Field(..., ge=0, description="Start time")
-    end: float = Field(..., ge=0, description="End time")
-    duration: float = Field(..., ge=0, description="Overlap duration")
+    speakers: list[str] = Field(..., description="Speakers involved (A, B, C, etc.)")
+    start: int = Field(..., ge=0, description="Start time in milliseconds")
+    end: int = Field(..., ge=0, description="End time in milliseconds")
+    duration: int = Field(..., ge=0, description="Overlap duration in milliseconds")
 
 
 class DiarizationRequest(StrictBaseModel):
-    """Request for speaker diarization only (without transcription)."""
+    """Request for speaker diarization only (AssemblyAI format)."""
 
     audio_url: str | None = Field(
         default=None,
         description="URL of the audio file",
     )
 
-    # Speaker settings
-    num_speakers: int | None = Field(
+    # Speaker settings (AssemblyAI naming convention)
+    speaker_labels: bool = Field(
+        default=True,
+        description="Enable speaker diarization",
+    )
+    speakers_expected: int | None = Field(
         default=None,
         ge=1,
         le=20,
-        description="Exact number of speakers (if known)",
+        description="Set exact number of speakers (if known)",
     )
-    min_speakers: int | None = Field(
+    min_speakers_expected: int | None = Field(
         default=None,
         ge=1,
-        description="Minimum number of speakers",
+        description="Minimum number of speakers expected",
     )
-    max_speakers: int | None = Field(
+    max_speakers_expected: int | None = Field(
         default=None,
         le=20,
-        description="Maximum number of speakers",
+        description="Maximum number of speakers expected",
     )
 
     # Processing options
@@ -403,26 +454,26 @@ class DiarizationRequest(StrictBaseModel):
 
 
 class DiarizationStats(StrictBaseModel):
-    """Statistics about the diarization results."""
+    """Statistics about the diarization results (AssemblyAI format)."""
 
     version: str = Field(default="1.0", description="Diarization model version")
     model: str = Field(..., description="Model used")
-    audio_duration: float = Field(..., description="Total audio duration")
+    audio_duration: int = Field(..., description="Total audio duration in milliseconds")
     num_speakers: int = Field(..., description="Number of detected speakers")
     num_segments: int = Field(..., description="Total number of segments")
     num_overlaps: int = Field(default=0, description="Number of overlap segments")
-    overlap_duration: float = Field(
-        default=0.0,
-        description="Total overlap duration",
+    overlap_duration: int = Field(
+        default=0,
+        description="Total overlap duration in milliseconds",
     )
-    processing_time: float | None = Field(
+    processing_time: int | None = Field(
         default=None,
-        description="Processing time in seconds",
+        description="Processing time in milliseconds",
     )
 
 
 class DiarizationResponse(StrictBaseModel):
-    """Response from diarization."""
+    """Response from diarization (AssemblyAI format)."""
 
     id: str = Field(..., description="Unique diarization ID")
     status: TranscriptionStatus = Field(..., description="Processing status")
@@ -433,16 +484,27 @@ class DiarizationResponse(StrictBaseModel):
 
     # Audio info
     audio_url: str | None = Field(default=None)
-    audio_duration: float | None = Field(default=None)
+    audio_duration: int | None = Field(
+        default=None,
+        description="Audio duration in milliseconds",
+    )
 
-    # Results
+    # AssemblyAI format: utterances is the main result field
+    utterances: list[Utterance] | None = Field(
+        default=None,
+        description="A turn-by-turn temporal sequence of speaker utterances",
+    )
+
+    # Additional speaker info
     speakers: list[Speaker] | None = Field(
         default=None,
-        description="Detected speakers",
+        description="Detected speakers with statistics",
     )
+    
+    # Legacy segments (kept for backward compatibility)
     segments: list[SpeakerSegment] | None = Field(
         default=None,
-        description="Speaker segments",
+        description="Speaker segments (deprecated, use utterances)",
     )
     overlaps: list[OverlapSegment] | None = Field(
         default=None,
