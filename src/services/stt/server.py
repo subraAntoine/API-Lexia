@@ -125,23 +125,33 @@ def load_whisper():
     global whisper_model
     if whisper_model is None:
         if USE_TRANSFORMERS:
-            # Use transformers with direct model loading (more stable than pipeline)
-            from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+            # Use transformers pipeline with word timestamps support
+            from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
             print(f"Loading Whisper model (transformers): {WHISPER_MODEL} on {DEVICE}")
 
             # Use float16 for distilled models on CUDA, float32 for CPU
             torch_dtype = torch.float16 if DEVICE == "cuda" else torch.float32
 
-            # Store processor and model separately for manual transcription
+            # Load model and processor
             processor = AutoProcessor.from_pretrained(WHISPER_MODEL)
             model = AutoModelForSpeechSeq2Seq.from_pretrained(
                 WHISPER_MODEL,
                 torch_dtype=torch_dtype,
                 low_cpu_mem_usage=True,
             ).to(DEVICE)
-            whisper_model = {"processor": processor, "model": model}
+            
+            # Create pipeline for automatic speech recognition with timestamps
+            pipe = pipeline(
+                "automatic-speech-recognition",
+                model=model,
+                tokenizer=processor.tokenizer,
+                feature_extractor=processor.feature_extractor,
+                torch_dtype=torch_dtype,
+                device=DEVICE,
+            )
+            whisper_model = {"pipeline": pipe, "processor": processor, "model": model}
 
-            print("Whisper model loaded successfully (transformers)")
+            print("Whisper model loaded successfully (transformers pipeline)")
         else:
             # Use faster-whisper for CTranslate2 models
             from faster_whisper import WhisperModel
@@ -258,41 +268,92 @@ async def transcribe(
         audio_duration = librosa.get_duration(path=str(temp_path))
 
         if USE_TRANSFORMERS:
-            # Use direct model inference (more stable than pipeline)
-            processor = model["processor"]
-            whisper = model["model"]
+            # Use transformers pipeline with word timestamps
+            pipe = model["pipeline"]
 
             # Load audio with librosa
             audio_array, _ = librosa.load(str(temp_path), sr=16000)
 
-            # Process audio and convert to correct dtype
-            inputs = processor(audio_array, sampling_rate=16000, return_tensors="pt")
-            # Match the model's dtype (float16 on CUDA, float32 on CPU)
-            input_features = inputs.input_features.to(DEVICE, dtype=whisper.dtype)
-
-            # Generate transcription
-            generate_kwargs = {"max_new_tokens": 444, "task": "transcribe"}
+            # Generate kwargs for transcription
+            generate_kwargs = {"task": "transcribe"}
             if language:
                 generate_kwargs["language"] = language
 
-            generated_ids = whisper.generate(input_features, **generate_kwargs)
-            text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+            # Run pipeline with word-level timestamps
+            result = pipe(
+                audio_array,
+                return_timestamps="word" if word_timestamps else True,
+                generate_kwargs=generate_kwargs,
+            )
 
-            # Create single segment (transformers direct mode doesn't give timestamps)
-            segments: list[TranscriptionSegment] = [
-                TranscriptionSegment(
+            text = result["text"].strip()
+            chunks = result.get("chunks", [])
+
+            # Build segments and words from chunks
+            segments: list[TranscriptionSegment] = []
+            all_words: list[TranscriptionWord] = []
+
+            if word_timestamps and chunks:
+                # Build word list from chunks
+                for chunk in chunks:
+                    timestamp = chunk.get("timestamp", (0, 0))
+                    start_time = timestamp[0] if timestamp[0] is not None else 0
+                    end_time = timestamp[1] if timestamp[1] is not None else start_time + 0.1
+                    
+                    word_obj = TranscriptionWord(
+                        text=chunk["text"].strip(),
+                        start=start_time,
+                        end=end_time,
+                        confidence=0.9,  # Pipeline doesn't provide word confidence
+                    )
+                    all_words.append(word_obj)
+
+                # Group words into segments (split on punctuation or every ~10 words)
+                current_segment_words = []
+                segment_id = 0
+                
+                for word in all_words:
+                    current_segment_words.append(word)
+                    # Create new segment on sentence-ending punctuation or every 15 words
+                    if (word.text.rstrip().endswith(('.', '!', '?', '。', '？', '！')) 
+                        or len(current_segment_words) >= 15):
+                        if current_segment_words:
+                            seg_text = " ".join(w.text for w in current_segment_words)
+                            segments.append(TranscriptionSegment(
+                                id=segment_id,
+                                text=seg_text.strip(),
+                                start=current_segment_words[0].start,
+                                end=current_segment_words[-1].end,
+                                confidence=0.9,
+                                words=current_segment_words.copy(),
+                            ))
+                            segment_id += 1
+                            current_segment_words = []
+                
+                # Add remaining words as final segment
+                if current_segment_words:
+                    seg_text = " ".join(w.text for w in current_segment_words)
+                    segments.append(TranscriptionSegment(
+                        id=segment_id,
+                        text=seg_text.strip(),
+                        start=current_segment_words[0].start,
+                        end=current_segment_words[-1].end,
+                        confidence=0.9,
+                        words=current_segment_words.copy(),
+                    ))
+            else:
+                # No word timestamps, create single segment
+                segments.append(TranscriptionSegment(
                     id=0,
-                    text=text.strip(),
+                    text=text,
                     start=0,
                     end=audio_duration,
                     confidence=0.9,
                     words=None,
-                )
-            ]
-            all_words: list[TranscriptionWord] = []
+                ))
 
             return TranscriptionResponse(
-                text=text.strip(),
+                text=text,
                 segments=segments,
                 words=all_words,
                 language=language or "fr",

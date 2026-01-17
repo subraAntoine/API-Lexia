@@ -93,7 +93,7 @@ source venv/bin/activate
 
 # Install PyTorch 2.4.1 (compatible with pyannote-audio)
 pip install --upgrade pip wheel setuptools
-pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1
+pip install torch==2.4.1 torchvision==0.23.0 torchaudio==2.4.1
 
 # Install faster-whisper
 pip install faster-whisper ctranslate2==4.4.0
@@ -149,13 +149,13 @@ CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/0
 
 # Point LLM to Pod 2 (replace <POD2_ID> with actual pod ID)
-LLM_SERVICE_URL=https://<POD2_ID>-8005.proxy.runpod.net
+LLM_SERVICE_URL=https://twak7scmkeiet4-8005.proxy.runpod.net
 
 # Local STT and Diarization
 STT_SERVICE_URL=http://localhost:8002
 DIARIZATION_SERVICE_URL=http://localhost:8003
 
-HF_TOKEN=hf_your_token_here
+HF_TOKEN=hf_token
 STORAGE_BACKEND=local
 LOCAL_STORAGE_PATH=/workspace/API-Lexia/data
 
@@ -314,10 +314,10 @@ export STT_SERVICE_URL="http://localhost:8002"
 export DIARIZATION_SERVICE_URL="http://localhost:8003"
 export STORAGE_BACKEND="local"
 export LOCAL_STORAGE_PATH="/workspace/API-Lexia/data"
-export HF_TOKEN="hf_your_token_here"
+export HF_TOKEN=hf_token
 
 # ⚠️ UPDATE THIS with your Pod 2 ID
-export LLM_SERVICE_URL="https://<POD2_ID>-8005.proxy.runpod.net"
+export LLM_SERVICE_URL="https://twak7scmkeiet4-8005.proxy.runpod.net"
 
 # STT Configuration
 export USE_TRANSFORMERS=true
