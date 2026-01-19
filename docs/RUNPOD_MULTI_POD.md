@@ -93,7 +93,6 @@ source venv/bin/activate
 
 # Install PyTorch 2.4.1 (compatible with pyannote-audio)
 pip install --upgrade pip wheel setuptools
-pip install torch==2.4.1 torchvision==0.23.0 torchaudio==2.4.1
 
 # Install faster-whisper
 pip install faster-whisper ctranslate2==4.4.0
@@ -102,7 +101,7 @@ pip install faster-whisper ctranslate2==4.4.0
 pip install pyannote-audio
 
 # Install other dependencies
-pip install "numpy<2"
+pip install numpy
 pip install transformers accelerate safetensors sentencepiece tokenizers
 pip install librosa soundfile httpx
 
@@ -149,7 +148,7 @@ CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/0
 
 # Point LLM to Pod 2 (replace <POD2_ID> with actual pod ID)
-LLM_SERVICE_URL=https://twak7scmkeiet4-8005.proxy.runpod.net
+LLM_SERVICE_URL=https://yl1bpv8yh5rdpz-8005.proxy.runpod.net
 
 # Local STT and Diarization
 STT_SERVICE_URL=http://localhost:8002
@@ -319,12 +318,13 @@ export LOCAL_STORAGE_PATH="/workspace/API-Lexia/data"
 export HF_TOKEN=hf_token
 
 # ⚠️ UPDATE THIS with your Pod 2 ID
-export LLM_SERVICE_URL="https://twak7scmkeiet4-8005.proxy.runpod.net"
+export LLM_SERVICE_URL="https://yl1bpv8yh5rdpz-8005.proxy.runpod.net"
 
 # STT Configuration
 export USE_TRANSFORMERS=true
 export WHISPER_MODEL="Gilbert-AI/gilbert-whisper-distil-fr-v0.2"
 export DEVICE=cuda
+ENABLE_DIARIZATION=true
 
 # Start STT server
 echo "[2/6] Starting STT server (Gilbert-Whisper)..."
@@ -419,7 +419,6 @@ cd llm-server
 python3 -m venv venv
 source venv/bin/activate
 
-# Install PyTorch 2.9 (required for vLLM)
 pip install --upgrade pip wheel setuptools
 
 # Install vLLM

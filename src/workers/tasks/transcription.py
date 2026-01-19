@@ -52,7 +52,7 @@ def _align_text_with_diarization(
         diar_segments: List of diarization SpeakerSegment objects
         
     Returns:
-        List of utterance dicts with speaker, timestamps, and aligned text
+        List of utterance dicts with speaker, timestamps, aligned text, and words (AssemblyAI format)
     """
     if not diar_segments:
         return []
@@ -70,29 +70,42 @@ def _align_text_with_diarization(
             start_ms = int(w.start * 1000) if hasattr(w, 'start') else int(w.get('start', 0) * 1000)
             end_ms = int(w.end * 1000) if hasattr(w, 'end') else int(w.get('end', 0) * 1000)
             word_text = w.text if hasattr(w, 'text') else w.get('text', '')
+            confidence = w.confidence if hasattr(w, 'confidence') else w.get('confidence', 0.9)
             word_list.append({
                 'text': word_text,
                 'start': start_ms,
                 'end': end_ms,
+                'confidence': float(confidence),
             })
         
         for seg in sorted_segments:
             seg_start = int(seg.start)
             seg_end = int(seg.end)
+            speaker = seg.speaker
             
-            # Find words that overlap with this segment
-            segment_words = []
+            # Find words that overlap with this segment (AssemblyAI format: include full word objects)
+            segment_words_text = []
+            segment_words_list = []
             for word in word_list:
                 # Word overlaps with segment if word_start < seg_end and word_end > seg_start
                 if word['start'] < seg_end and word['end'] > seg_start:
-                    segment_words.append(word['text'])
+                    segment_words_text.append(word['text'])
+                    # AssemblyAI format: each word has speaker label
+                    segment_words_list.append({
+                        "text": word['text'],
+                        "start": word['start'],
+                        "end": word['end'],
+                        "confidence": word['confidence'],
+                        "speaker": speaker,
+                    })
             
             utterances.append({
-                "speaker": seg.speaker,
+                "speaker": speaker,
                 "start": seg_start,
                 "end": seg_end,
-                "text": " ".join(segment_words).strip(),
+                "text": " ".join(segment_words_text).strip(),
                 "confidence": float(seg.confidence),
+                "words": segment_words_list if segment_words_list else None,
             })
     else:
         # No word timestamps - distribute text proportionally by duration
@@ -109,28 +122,60 @@ def _align_text_with_diarization(
                 seg_start = int(seg.start)
                 seg_end = int(seg.end)
                 seg_duration = seg_end - seg_start
+                speaker = seg.speaker
                 
                 # Calculate how many words this segment should get
                 proportion = seg_duration / total_duration
                 num_words = max(1, int(proportion * total_words))
                 
                 # Get words for this segment
-                segment_words = text_words[word_index:word_index + num_words]
+                segment_word_texts = text_words[word_index:word_index + num_words]
                 word_index += num_words
                 
+                # Create word objects with estimated timestamps (evenly distributed)
+                segment_words_list = []
+                if segment_word_texts:
+                    word_duration = seg_duration // len(segment_word_texts)
+                    for i, word_text in enumerate(segment_word_texts):
+                        word_start = seg_start + (i * word_duration)
+                        word_end = word_start + word_duration
+                        segment_words_list.append({
+                            "text": word_text,
+                            "start": word_start,
+                            "end": word_end,
+                            "confidence": 0.9,  # Default confidence for estimated words
+                            "speaker": speaker,
+                        })
+                
                 utterances.append({
-                    "speaker": seg.speaker,
+                    "speaker": speaker,
                     "start": seg_start,
                     "end": seg_end,
-                    "text": " ".join(segment_words).strip(),
+                    "text": " ".join(segment_word_texts).strip(),
                     "confidence": float(seg.confidence),
+                    "words": segment_words_list if segment_words_list else None,
                 })
             
             # If there are remaining words, add them to the last utterance
             if word_index < total_words and utterances:
-                remaining = " ".join(text_words[word_index:])
-                utterances[-1]["text"] += " " + remaining
+                remaining_words = text_words[word_index:]
+                remaining_text = " ".join(remaining_words)
+                utterances[-1]["text"] += " " + remaining_text
                 utterances[-1]["text"] = utterances[-1]["text"].strip()
+                
+                # Add remaining words to the last utterance's words list
+                last_utterance = utterances[-1]
+                if last_utterance["words"] is None:
+                    last_utterance["words"] = []
+                last_end = last_utterance["end"]
+                for word_text in remaining_words:
+                    last_utterance["words"].append({
+                        "text": word_text,
+                        "start": last_end,
+                        "end": last_end,
+                        "confidence": 0.9,
+                        "speaker": last_utterance["speaker"],
+                    })
         else:
             # No text or duration, just create empty utterances
             for seg in sorted_segments:
@@ -140,6 +185,7 @@ def _align_text_with_diarization(
                     "end": int(seg.end),
                     "text": "",
                     "confidence": float(seg.confidence),
+                    "words": None,
                 })
     
     return utterances
