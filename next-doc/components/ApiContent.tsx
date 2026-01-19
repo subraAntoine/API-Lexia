@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { API_URL } from "@/lib/config";
 import { Brain, Mic, Users, Info, Check, Shield, AlertTriangle } from "lucide-react";
 
 export function ApiContent() {
@@ -94,7 +95,7 @@ export function ApiContent() {
                     </CardHeader>
                     <CardContent>
                         <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-sm font-mono">
-                            {`curl -X GET https://api.lexia.pro/v1/models \\
+                            {`curl -X GET ${API_URL}/v1/models \\
   -H "Authorization: Bearer lx_abc123def456..."
   -H "Content-Type: application/json"`}
                         </pre>
@@ -234,7 +235,7 @@ X-RateLimit-Reset: 1705000060`}
                         </CardHeader>
                         <CardContent>
                             <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-xs font-mono">
-                                {`curl -X GET https://api.lexia.pro/v1/models \\
+                                {`curl -X GET ${API_URL}/v1/models \\
   -H "Authorization: Bearer lx_abc123..."`}
                             </pre>
                         </CardContent>
@@ -460,7 +461,7 @@ X-RateLimit-Reset: 1705000060`}
                         </CardHeader>
                         <CardContent>
                             <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-xs font-mono">
-                                {`curl -X POST https://api.lexia.pro/v1/chat/completions \\
+                                {`curl -X POST ${API_URL}/v1/chat/completions \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -533,7 +534,7 @@ X-RateLimit-Reset: 1705000060`}
                     </CardHeader>
                     <CardContent>
                         <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-xs font-mono">
-                            {`curl -X POST https://api.lexia.pro/v1/chat/completions \\
+                            {`curl -X POST ${API_URL}/v1/chat/completions \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{

@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageNavigation } from "@/components/PageNavigation";
 import { getNavigation } from "@/lib/navigation";
+import { API_URL } from "@/lib/config";
 
 export default function StreamingPage() {
     const nav = getNavigation("/docs/llm/streaming");
@@ -28,7 +29,7 @@ export default function StreamingPage() {
                             Set <code className="bg-slate-100 px-1.5 py-0.5 rounded text-sm font-mono text-slate-800">stream: true</code> in your request body to receive streaming responses.
                         </p>
                         <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-xs font-mono">
-                            {`curl -X POST https://api.lexia.pro/v1/chat/completions \\
+                            {`curl -X POST ${API_URL}/v1/chat/completions \\
   -H "Authorization: Bearer lx_abc123..." \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -96,7 +97,7 @@ data: [DONE]`}
                     </CardHeader>
                     <CardContent>
                         <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-xs font-mono">
-                            {`const response = await fetch('https://api.lexia.pro/v1/chat/completions', {
+                            {`const response = await fetch('${API_URL}/v1/chat/completions', {
   method: 'POST',
   headers: {
     'Authorization': 'Bearer lx_abc123...',

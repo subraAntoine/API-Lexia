@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageNavigation } from "@/components/PageNavigation";
 import { getNavigation } from "@/lib/navigation";
+import { API_URL } from "@/lib/config";
 
 export default function GetDiarizationPage() {
     const nav = getNavigation("/docs/diarization/get-diarization");
@@ -73,7 +74,7 @@ export default function GetDiarizationPage() {
                     </CardHeader>
                     <CardContent>
                         <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-xs font-mono">
-                            {`curl -X GET https://api.lexia.pro/v1/diarization/550e8400-e29b-41d4-a716-446655440000 \\
+                            {`curl -X GET ${API_URL}/v1/diarization/550e8400-e29b-41d4-a716-446655440000 \\
   -H "Authorization: Bearer lx_abc123..."`}
                         </pre>
                     </CardContent>
@@ -96,15 +97,17 @@ export default function GetDiarizationPage() {
       "speaker": "A",
       "start": 0,
       "end": 5200,
-      "text": "Bonjour, comment ça va ?",
-      "confidence": 0.95
+      "text": null,
+      "confidence": 0.95,
+      "words": null
     },
     {
       "speaker": "B",
       "start": 5500,
       "end": 12800,
-      "text": "Très bien, merci. Et vous ?",
-      "confidence": 0.92
+      "text": null,
+      "confidence": 0.92,
+      "words": null
     }
   ],
   "speakers": [
@@ -286,10 +289,15 @@ export default function GetDiarizationPage() {
                                 <span className="text-sm text-slate-500">string</span>
                                 <span className="text-sm text-slate-600">Transcribed text of the utterance</span>
                             </div>
-                            <div className="grid grid-cols-3 gap-4">
+                            <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">confidence</span>
                                 <span className="text-sm text-slate-500">float</span>
                                 <span className="text-sm text-slate-600">Confidence score (0-1)</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4">
+                                <span className="font-mono text-sm font-medium text-slate-900">words</span>
+                                <span className="text-sm text-slate-500">array | null</span>
+                                <span className="text-sm text-slate-600">Word-level details with speaker labels (AssemblyAI format)</span>
                             </div>
                         </div>
                     </CardContent>

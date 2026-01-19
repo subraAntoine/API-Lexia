@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageNavigation } from "@/components/PageNavigation";
 import { getNavigation } from "@/lib/navigation";
+import { API_URL } from "@/lib/config";
 
 export default function ChatCompletionsPage() {
     const nav = getNavigation("/docs/llm/chat-completions");
@@ -131,7 +132,7 @@ export default function ChatCompletionsPage() {
                         </CardHeader>
                         <CardContent>
                             <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-xs font-mono">
-                                {`curl -X POST https://api.lexia.pro/v1/chat/completions \\
+                                {`curl -X POST ${API_URL}/v1/chat/completions \\
   -H "Authorization: Bearer lx_abc123..." \\
   -H "Content-Type: application/json" \\
   -d '{

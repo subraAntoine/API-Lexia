@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageNavigation } from "@/components/PageNavigation";
 import { getNavigation } from "@/lib/navigation";
+import { API_URL } from "@/lib/config";
 import { AlertTriangle } from "lucide-react";
 
 export default function SyncTranscriptionPage() {
@@ -27,7 +28,7 @@ export default function SyncTranscriptionPage() {
                             <div className="space-y-1">
                                 <p className="text-sm font-medium text-amber-800">Use for short audio only</p>
                                 <p className="text-sm text-amber-700">
-                                    This endpoint is designed for audio files under 5 minutes and 50MB. For longer files, use the asynchronous 
+                                    This endpoint is designed for audio files under 5 minutes and 50MB. For longer files, use the asynchronous
                                     Create Transcription endpoint to avoid request timeouts. Sync requests do not persist results.
                                 </p>
                             </div>
@@ -88,7 +89,7 @@ export default function SyncTranscriptionPage() {
                     </CardHeader>
                     <CardContent>
                         <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-xs font-mono">
-                            {`curl -X POST https://api.lexia.pro/v1/transcriptions/sync \\
+                            {`curl -X POST ${API_URL}/v1/transcriptions/sync \\
   -H "Authorization: Bearer lx_abc123..." \\
   -F "audio=@short_audio.mp3" \\
   -F "language_code=fr"`}

@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageNavigation } from "@/components/PageNavigation";
 import { getNavigation } from "@/lib/navigation";
+import { API_URL } from "@/lib/config";
 
 export default function CreateTranscriptionPage() {
     const nav = getNavigation("/docs/stt/create-transcription");
@@ -116,7 +117,7 @@ export default function CreateTranscriptionPage() {
                         </CardHeader>
                         <CardContent>
                             <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-xs font-mono">
-                                {`curl -X POST https://api.lexia.pro/v1/transcriptions \\
+                                {`curl -X POST ${API_URL}/v1/transcriptions \\
   -H "Authorization: Bearer lx_abc123..." \\
   -F "audio=@recording.mp3" \\
   -F "language_code=fr" \\

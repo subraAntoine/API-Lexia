@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageNavigation } from "@/components/PageNavigation";
 import { getNavigation } from "@/lib/navigation";
+import { API_URL } from "@/lib/config";
 import { Info } from "lucide-react";
 
 export default function CreateDiarizationPage() {
@@ -27,7 +28,7 @@ export default function CreateDiarizationPage() {
                             <div className="space-y-1">
                                 <p className="text-sm font-medium text-indigo-800">What is Speaker Diarization?</p>
                                 <p className="text-sm text-indigo-700">
-                                    Speaker diarization segments audio by speaker identity. It answers &quot;who spoke when&quot; but does not 
+                                    Speaker diarization segments audio by speaker identity. It answers &quot;who spoke when&quot; but does not
                                     transcribe the words. Use this when you need speaker timelines without the text content.
                                 </p>
                             </div>
@@ -124,7 +125,7 @@ export default function CreateDiarizationPage() {
                     </CardHeader>
                     <CardContent>
                         <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-xs font-mono">
-                            {`curl -X POST https://api.lexia.pro/v1/diarization \\
+                            {`curl -X POST ${API_URL}/v1/diarization \\
   -H "Authorization: Bearer lx_abc123..." \\
   -F "audio=@meeting.mp3" \\
   -F "min_speakers_expected=2" \\

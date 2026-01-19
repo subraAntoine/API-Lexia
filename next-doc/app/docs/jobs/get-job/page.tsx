@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageNavigation } from "@/components/PageNavigation";
 import { getNavigation } from "@/lib/navigation";
+import { API_URL } from "@/lib/config";
 import { Info } from "lucide-react";
 
 export default function GetJobPage() {
@@ -27,7 +28,7 @@ export default function GetJobPage() {
                             <div className="space-y-1">
                                 <p className="text-sm font-medium text-indigo-800">Polling Pattern</p>
                                 <p className="text-sm text-indigo-700">
-                                    For async jobs, poll this endpoint every 2-5 seconds until <code className="bg-indigo-100 px-1 rounded">status</code> is 
+                                    For async jobs, poll this endpoint every 2-5 seconds until <code className="bg-indigo-100 px-1 rounded">status</code> is
                                     <code className="bg-indigo-100 px-1 rounded">completed</code> or <code className="bg-indigo-100 px-1 rounded">failed</code>.
                                     Alternatively, use webhooks for completion notifications.
                                 </p>
@@ -64,7 +65,7 @@ export default function GetJobPage() {
                     </CardHeader>
                     <CardContent>
                         <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-xs font-mono">
-                            {`curl -X GET https://api.lexia.pro/v1/jobs/550e8400-e29b-41d4-a716-446655440000 \\
+                            {`curl -X GET ${API_URL}/v1/jobs/550e8400-e29b-41d4-a716-446655440000 \\
   -H "Authorization: Bearer lx_abc123..."`}
                         </pre>
                     </CardContent>

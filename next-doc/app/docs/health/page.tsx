@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageNavigation } from "@/components/PageNavigation";
 import { getNavigation } from "@/lib/navigation";
+import { API_URL } from "@/lib/config";
 import { Check, AlertTriangle } from "lucide-react";
 
 export default function HealthCheckPage() {
@@ -46,7 +47,7 @@ export default function HealthCheckPage() {
                     </CardHeader>
                     <CardContent>
                         <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-xs font-mono">
-                            {`curl -X GET https://api.lexia.pro/health`}
+                            {`curl -X GET ${API_URL}/health`}
                         </pre>
                     </CardContent>
                 </Card>

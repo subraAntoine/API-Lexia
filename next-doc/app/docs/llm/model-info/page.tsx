@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageNavigation } from "@/components/PageNavigation";
 import { getNavigation } from "@/lib/navigation";
+import { API_URL } from "@/lib/config";
 
 export default function ModelInfoPage() {
     const nav = getNavigation("/docs/llm/model-info");
@@ -46,7 +47,7 @@ export default function ModelInfoPage() {
                         </CardHeader>
                         <CardContent>
                             <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-xs font-mono">
-                                {`curl -X GET https://api.lexia.pro/v1/models/general7Bv2 \\
+                                {`curl -X GET ${API_URL}/v1/models/general7Bv2 \\
   -H "Authorization: Bearer lx_abc123..."`}
                             </pre>
                         </CardContent>

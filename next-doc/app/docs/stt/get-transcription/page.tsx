@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageNavigation } from "@/components/PageNavigation";
 import { getNavigation } from "@/lib/navigation";
+import { API_URL } from "@/lib/config";
 
 export default function GetTranscriptionPage() {
     const nav = getNavigation("/docs/stt/get-transcription");
@@ -73,7 +74,7 @@ export default function GetTranscriptionPage() {
                     </CardHeader>
                     <CardContent>
                         <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-xs font-mono">
-                            {`curl -X GET https://api.lexia.pro/v1/transcriptions/550e8400-e29b-41d4-a716-446655440000 \\
+                            {`curl -X GET ${API_URL}/v1/transcriptions/550e8400-e29b-41d4-a716-446655440000 \\
   -H "Authorization: Bearer lx_abc123..."`}
                         </pre>
                     </CardContent>
@@ -122,7 +123,23 @@ export default function GetTranscriptionPage() {
       "start": 0,
       "end": 2500,
       "text": "Bonjour, bienvenue dans cette réunion.",
-      "confidence": 0.95
+      "confidence": 0.95,
+      "words": [
+        {
+          "text": "Bonjour",
+          "start": 0,
+          "end": 500,
+          "confidence": 0.98,
+          "speaker": "A"
+        },
+        {
+          "text": "bienvenue",
+          "start": 600,
+          "end": 1100,
+          "confidence": 0.96,
+          "speaker": "A"
+        }
+      ]
     }
   ],
   "error": null,
@@ -171,7 +188,7 @@ export default function GetTranscriptionPage() {
                             <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-2">
                                 <span className="font-mono text-sm font-medium text-slate-900">utterances</span>
                                 <span className="text-sm text-slate-500">array</span>
-                                <span className="text-sm text-slate-600">Speaker-attributed speech segments (if speaker_labels enabled)</span>
+                                <span className="text-sm text-slate-600">Speaker-attributed speech segments with words (if speaker_labels enabled)</span>
                             </div>
                             <div className="grid grid-cols-3 gap-4">
                                 <span className="font-mono text-sm font-medium text-slate-900">error</span>
@@ -229,7 +246,7 @@ export default function GetTranscriptionPage() {
 
   for (let i = 0; i < maxAttempts; i++) {
     const response = await fetch(
-      \`https://api.lexia.pro/v1/transcriptions/\${id}\`,
+      \`${API_URL}/v1/transcriptions/\${id}\`,
       { headers: { 'Authorization': 'Bearer lx_abc123...' } }
     );
     const data = await response.json();

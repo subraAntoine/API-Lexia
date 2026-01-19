@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageNavigation } from "@/components/PageNavigation";
 import { getNavigation } from "@/lib/navigation";
+import { API_URL } from "@/lib/config";
 import { Brain, Mic, Users, Info } from "lucide-react";
 import Link from "next/link";
 
@@ -77,7 +78,7 @@ export default function IntroductionPage() {
                         </CardHeader>
                         <CardContent>
                             <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-sm font-mono">
-                                {`curl -X POST https://api.lexia.pro/v1/chat/completions \\
+                                {`curl -X POST ${API_URL}/v1/chat/completions \\
   -H "Authorization: Bearer lx_your_api_key" \\
   -H "Content-Type: application/json" \\
   -d '{

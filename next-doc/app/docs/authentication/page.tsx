@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { PageNavigation } from "@/components/PageNavigation";
 import { getNavigation } from "@/lib/navigation";
+import { API_URL } from "@/lib/config";
 import { Check, Shield } from "lucide-react";
 
 export default function AuthenticationPage() {
@@ -32,7 +33,7 @@ export default function AuthenticationPage() {
                     <CardContent className="pt-6 space-y-4">
                         <h3 className="text-sm font-medium uppercase tracking-wider text-slate-500">Example Request</h3>
                         <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-sm font-mono">
-                            {`curl -X GET https://api.lexia.pro/v1/models \\
+                            {`curl -X GET ${API_URL}/v1/models \\
   -H "Authorization: Bearer lx_abc123def456..." \\
   -H "Content-Type: application/json"`}
                         </pre>
